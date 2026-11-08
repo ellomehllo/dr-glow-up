@@ -2,9 +2,10 @@
 // origin at the head's ideal resting centre, y pointing down. Every draw reads one
 // plain state object (with the person's look in `s.who`), so the results screen can
 // draw the untreated "before" patient from a second copy.
-import { TAU, clamp01, lerp, smooth, easeOutBack, Poly, cubic, INK, ell } from './draw.js';
+import { TAU, clamp01, lerp, smooth, easeOutBack, Poly, cubic, INK, ell, star4 } from './draw.js';
 import { CURLS, CAP, tuftKept, drawHair, drawBackHair } from './hair.js';
 import { drawBody, drawNeck, drawBehind } from './outfits.js';
+import { mix } from './people.js';
 
 export { INK, CURLS };
 export const CAP_PATH = CAP;
@@ -82,30 +83,61 @@ export const PIMPLE_SPOTS = [
   { x: -128, y: 4, r: 8 }, { x: 70, y: 132, r: 8 },
 ];
 
-// scratch scars the healing gel fills (level 3 and up)
+// scratch scars the healing gel fills; a patient gets one to four of them
 export const CRACKS = [
   { head: true, pts: [[40, -94], [58, -88], [76, -80], [94, -72]] },
   { head: true, pts: [[-148, 40], [-136, 50], [-122, 56], [-106, 58]] },
   { head: true, pts: [[-146, 70], [-134, 80], [-120, 86], [-106, 88]] },
   { head: true, pts: [[134, 94], [124, 106], [114, 118], [106, 132]] },
-].map((c) => ({ ...c, poly: new Poly(c.pts) }));
+].map((c) => {
+  const poly = new Poly(c.pts), m = poly.at(poly.len / 2);
+  return { ...c, poly, t: { x: m.x, y: m.y, r: poly.len / 2 + 16 } }; // t: its press target
+});
+
+// wrinkles the little iron smooths out, each a line it glides along
+export const WRINKLES = [
+  [[-52, -66], [-18, -72], [18, -72], [52, -66]], // forehead
+  [[-42, -88], [-14, -93], [14, -93], [42, -88]],
+  [[-36, 82], [-50, 100], [-50, 124]], // smile lines
+  [[36, 82], [50, 100], [50, 124]],
+  [[-118, -6], [-104, 12], [-118, 30]], // crow's feet
+  [[118, -6], [104, 12], [118, 30]],
+].map((pts, i) => ({ i, pts, poly: new Poly(pts) }));
+
+// where sun spots can sit for the laser (clear of the eyes, nose, mouth and brows)
+export const SPOT_SPOTS = [
+  [-72, -66], [-22, -58], [30, -84], [76, -62], [-42, -98], [54, -100], [-124, -18], [124, -30],
+  [-118, 34], [-100, 92], [-70, 112], [-128, 76], [112, 44], [96, 100], [70, 112], [126, 80], [118, 8],
+  [-30, 170], [26, 176], [-96, 150], [92, 152],
+].map(([x, y]) => ({ x, y }));
 
 const FRECKLES = [[-70, 48], [-84, 58], [-58, 60], [-96, 46], [-76, 66], [-62, 44], [-90, 70]];
 
 // ---------- state ----------
 const DEFAULT_SETUP = {
-  who: null, pimples: PIMPLE_SPOTS.slice(0, 6), scars: true, jaw0: 0, mew0: 0, hair0: 0, brow0: 0,
+  who: null, pimples: PIMPLE_SPOTS.slice(0, 6), cracks: CRACKS, jaw0: 0, mew0: 0, hair0: 0, brow0: 0,
 };
 export function makeState(setup = DEFAULT_SETUP) {
   const st = setup;
   return {
-    who: st.who, scars: !!st.scars,
+    who: st.who, cracks: st.cracks || [],
     // face proportions: the head is drawn (and touched) through this scale
     fx: (st.who && st.who.face && st.who.face.sx) || 1, fy: (st.who && st.who.face && st.who.face.sy) || 1,
     jaw: st.jaw0, mew: st.mew0, hair: st.hair0, browL: st.brow0, browR: st.brow0, uni: 0, puff: 0,
-    nick: 0, shine: 0, sweep: -999, glow: 0, dirtAlpha: 1,
+    nick: 0, shine: 0, sweep: -999, glow: 0, dirtAlpha: st.dirt === 0 ? 0 : 1,
     // per scar: how far the gel has run (0..1.25) and how healed it is (0..1)
-    scarF: CRACKS.map(() => 0), scarH: CRACKS.map(() => 0),
+    scarF: (st.cracks || []).map(() => 0), scarH: (st.cracks || []).map(() => 0),
+    // nose: 0 big and bumpy, 1 just right, up to ~1.45 too small (a piggy nose)
+    nose: st.nose0 ?? 1,
+    // dark circles under the left and right eye (1 dark .. 0 gone), and the green
+    // cucumber tint a too-long press leaves
+    circ: [st.circ0 || 0, st.circ0 || 0], circG: [0, 0],
+    // sun spots the laser zaps (z: 0 there .. 1 gone) and the burn marks lingering leaves
+    spots: (st.spots || []).map((p) => ({ ...p, z: 0 })), burns: [],
+    // teeth: 0 yellow, 1 white, past 1 glowing too bright
+    teeth: st.teeth0 ?? 1,
+    // wrinkles: how far the iron has run along each (0..1.25) and the red mark of an overdone one
+    wrk: (st.wrinkles || []).map((w) => ({ ...w, f: 0, red: 0 })),
     strays: [], // stray hairs painted onto the face by a sloppy brush (head space)
     pimples: st.pimples.map((p, i) => ({ ...p, swell: 0, popped: false, mark: 0, shrink: 0, wob: i * 1.3 })),
     curls: CURLS.map((_, i) => (st.hair0 >= 1 && tuftKept(st.who && st.who.style, i) ? 9 : -1)), // seconds since each tuft grew in (-1: not yet)
@@ -206,10 +238,9 @@ function drawChair(ctx) {
 
 // scratch scars; the healing gel runs along them, then the healed part fades away
 function drawScars(ctx, s, time) {
-  if (!s.scars) return;
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  for (let i = 0; i < CRACKS.length; i++) {
-    const P = CRACKS[i].poly, L = P.len, f = clamp01(s.scarF[i]), heal = clamp01(s.scarH[i]), Lf = L * f;
+  for (let i = 0; i < s.cracks.length; i++) {
+    const P = s.cracks[i].poly, L = P.len, f = clamp01(s.scarF[i]), heal = clamp01(s.scarH[i]), Lf = L * f;
     const scar = (a, b, alpha) => {
       if (b - a < 0.5 || alpha < 0.01) return;
       ctx.globalAlpha = alpha;
@@ -367,18 +398,34 @@ function drawBrows(ctx, s) {
   }
 }
 
+const GRIN = new Path2D('M -38 110 Q 0 122 38 110 Q 32 146 0 148 Q -32 146 -38 110 Z');
 function drawMouth(ctx, s) {
   const m = s.moodV, y = 120, paint = s.who.lip, lip = paint || s.who.skin.lip;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = INK; ctx.lineWidth = LW;
   const kind = s.mouth;
   if (kind === 'grin') {
-    const p = new Path2D('M -38 110 Q 0 122 38 110 Q 32 146 0 148 Q -32 146 -38 110 Z');
+    const p = GRIN, t = s.teeth, over = clamp01((t - 1) / 0.4);
     ctx.fillStyle = '#7a2535'; ctx.fill(p);
     ctx.save(); ctx.clip(p);
-    ctx.fillStyle = '#fff'; ctx.fillRect(-40, 104, 80, 14);
+    // teeth: yellow and stained before whitening, white after, glowing ice-blue if overdone
+    ctx.fillStyle = t >= 1 ? mix('#ffffff', '#d8f3ff', over) : mix('#e2b948', '#ffffff', smooth(clamp01(t)));
+    ctx.beginPath(); ctx.moveTo(-40, 104); ctx.lineTo(40, 104); ctx.lineTo(40, 122); ctx.quadraticCurveTo(0, 132, -40, 122); ctx.closePath(); ctx.fill();
+    if (t < 0.6) {
+      ctx.fillStyle = `rgba(150,100,40,${0.55 * (1 - t / 0.6)})`;
+      ell(ctx, -15, 121, 4, 3); ctx.fill(); ell(ctx, 17, 119, 3.5, 2.5); ctx.fill(); ell(ctx, 2, 124, 3, 2); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(58,39,71,0.25)'; ctx.lineWidth = 2;
+    ctx.beginPath(); for (const x of [-22, -8, 8, 22]) { ctx.moveTo(x, 104); ctx.lineTo(x, 125 - Math.abs(x) * 0.15); } ctx.stroke();
     ell(ctx, 0, 146, 18, 10); ctx.fillStyle = '#ff8fa8'; ctx.fill();
     ctx.restore();
-    ctx.stroke(p);
+    ctx.strokeStyle = INK; ctx.stroke(p);
+    if (over > 0.02) { // dazzling: a blue halo and twinkles
+      ctx.save();
+      ctx.globalAlpha = 0.45 * over; ell(ctx, 0, 116, 56 + 20 * over, 26 + 10 * over); ctx.fillStyle = '#bfe9ff'; ctx.fill();
+      ctx.globalAlpha = over;
+      for (const [x, y, r] of [[-30, 100, 11], [32, 102, 9], [4, 92, 7]]) { star4(ctx, x, y, r * (0.6 + 0.4 * over)); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.lineWidth = 2.5; ctx.stroke(); }
+      ctx.restore();
+    }
     return;
   }
   ctx.beginPath();
@@ -413,7 +460,12 @@ function drawMouth(ctx, s) {
 }
 
 // ---------- the little things that make each patient who they are ----------
-function drawNose(ctx, kind) {
+// k: 0 big and bumpy (before a nose job), 1 the patient's own, past 1 shrunk too far
+function drawNose(ctx, kind, k = 1, sk = null) {
+  const big = smooth(clamp01(1 - k)), tiny = clamp01((k - 1) / 0.3);
+  const sz = 1 + 0.5 * big - 0.42 * tiny;
+  ctx.save();
+  if (sz !== 1) { ctx.translate(0, 40); ctx.scale(sz, sz); ctx.translate(0, -40); }
   ctx.lineWidth = 5; ctx.strokeStyle = INK; ctx.globalAlpha = 0.75;
   ctx.beginPath();
   if (kind === 'button') {
@@ -427,7 +479,32 @@ function drawNose(ctx, kind) {
     ctx.globalAlpha = 0.55; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(16, 70 + (t ? 6 : 0)); ctx.quadraticCurveTo(23, 76 + (t ? 6 : 0), 14, 81 + (t ? 6 : 0)); ctx.stroke();
   }
-  ctx.globalAlpha = 1;
+  if (big > 0.02 && sk) drawBigNose(ctx, sk, big);
+  if (tiny > 0.02) { // upturned piggy nostrils
+    ctx.globalAlpha = tiny; ctx.fillStyle = '#5a2a35';
+    ell(ctx, -8, 74, 4.5, 6); ctx.fill(); ell(ctx, 8, 74, 4.5, 6); ctx.fill();
+  }
+  ctx.restore();
+}
+// the big, bumpy, red-tipped nose a patient comes in with for a nose job; it fades into
+// their own nose as the job goes on
+function drawBigNose(ctx, sk, a) {
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, a * 1.4);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = INK;
+  // bridge, with a bump on it
+  const bridge = new Path2D('M -6 18 C -8 25 -19 30 -17 39 C -15 45 -17 50 -16 54 L 16 54 C 15 44 11 30 6 18 Z');
+  ctx.fillStyle = sk.base; ctx.fill(bridge);
+  ctx.beginPath(); ctx.moveTo(-6, 18); ctx.bezierCurveTo(-8, 25, -19, 30, -17, 39); ctx.bezierCurveTo(-15, 45, -17, 50, -16, 54);
+  ctx.moveTo(6, 18); ctx.bezierCurveTo(11, 30, 15, 44, 16, 54); ctx.stroke();
+  // nostril wings, then the round tip over them
+  for (const side of [-1, 1]) { ell(ctx, side * 25, 74, 13, 11); ctx.fillStyle = sk.shade; ctx.fill(); ctx.stroke(); }
+  ell(ctx, 1, 64, 27, 23); ctx.fillStyle = sk.base; ctx.fill(); ctx.stroke();
+  ell(ctx, 3, 68, 18, 13); ctx.fillStyle = 'rgba(255,100,115,0.32)'; ctx.fill();
+  ell(ctx, -8, 56, 7, 5, -0.5); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();
+  ctx.fillStyle = '#5a2a35';
+  for (const side of [-1, 1]) { ell(ctx, side * 11, 84, 5, 3.5, side * 0.3); ctx.fill(); }
+  ctx.restore();
 }
 function drawEarring(ctx, kind, side) {
   ctx.lineWidth = 3; ctx.strokeStyle = INK;
@@ -484,6 +561,65 @@ function drawWrinkles(ctx) {
   ctx.globalAlpha = 1;
 }
 
+// dark circles under the eyes (purple) and the green tint of a cucumber left on too long
+function drawCircles(ctx, s) {
+  const e = s.who.eyeSize || 1;
+  ctx.save(); ctx.lineCap = 'round';
+  for (let i = 0; i < 2; i++) {
+    const d = s.circ[i], gr = s.circG[i];
+    if (d < 0.01 && gr < 0.01) continue;
+    ctx.beginPath(); ctx.ellipse((i ? 1 : -1) * EYE.x, EYE.y + 4, EYE.rx * e * 1.14, EYE.ry * e * 1.28, 0, Math.PI * 0.1, Math.PI * 0.9);
+    if (d > 0.01) {
+      ctx.lineWidth = 16; ctx.strokeStyle = `rgba(96,58,122,${0.5 * d})`; ctx.stroke();
+      ctx.lineWidth = 5; ctx.strokeStyle = `rgba(70,36,92,${0.4 * d})`; ctx.stroke();
+    }
+    if (gr > 0.01) { ctx.lineWidth = 17; ctx.strokeStyle = `rgba(110,205,80,${0.6 * gr})`; ctx.stroke(); }
+  }
+  ctx.restore();
+}
+// sun spots, and pink marks where the laser lingered
+function drawSpots(ctx, s) {
+  if (!s.spots.length && !s.burns.length) return;
+  // a soft ink rim keeps them readable on every skin tone
+  const col = mix(s.who.skin.deep, '#2a160c', 0.5);
+  ctx.lineWidth = 2.5; ctx.strokeStyle = INK;
+  for (const p of s.spots) {
+    const a = 1 - p.z, k = 0.55 + 0.45 * a;
+    if (a <= 0.01) continue;
+    const blob = new Path2D();
+    blob.ellipse(p.x, p.y, p.r * k, p.r * 0.82 * k, p.rot, 0, TAU);
+    if (p.r > 9) {
+      const x = p.x + p.r * 0.72 * k, y = p.y + p.r * 0.5 * k, rx = p.r * 0.4 * k;
+      blob.moveTo(x + rx, y); blob.ellipse(x, y, rx, p.r * 0.34 * k, 0, 0, TAU);
+    }
+    ctx.globalAlpha = 0.9 * a; ctx.fillStyle = col; ctx.fill(blob);
+    ctx.globalAlpha = 0.4 * a; ctx.stroke(blob);
+  }
+  ctx.globalAlpha = 1;
+  for (const b of s.burns) {
+    const k = easeOutBack(clamp01(b.t / 0.25));
+    ell(ctx, b.x, b.y, 12 * k, 9 * k); ctx.fillStyle = 'rgba(255,70,100,0.42)'; ctx.fill();
+    ell(ctx, b.x, b.y, 5 * k, 4 * k); ctx.fillStyle = 'rgba(255,70,100,0.5)'; ctx.fill();
+  }
+}
+// wrinkle lines still to iron (the ironed stretch is gone), and pink where it stayed too long
+function drawWrinkleLines(ctx, s) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const w of s.wrk) {
+    const P = w.poly, L = P.len, a = L * Math.min(1, w.f);
+    if (w.red > 0.01) {
+      const e = w.pts[w.pts.length - 1];
+      ell(ctx, e[0], e[1], 24, 16); ctx.fillStyle = `rgba(255,90,110,${0.38 * w.red})`; ctx.fill();
+    }
+    if (L - a < 1) continue;
+    ctx.globalAlpha = 0.55; ctx.strokeStyle = INK; ctx.lineWidth = 4.5;
+    ctx.beginPath(); P.trace(ctx, a, L); ctx.stroke();
+    ctx.globalAlpha = 0.25; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+    ctx.save(); ctx.translate(0, 4); ctx.beginPath(); P.trace(ctx, a, L); ctx.stroke(); ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+}
+
 function drawHead(ctx, s, time, dirtImg) {
   const w = s.who, sk = w.skin;
   const j = s.jaw, chin = jawSegs(j)[3][5];
@@ -495,14 +631,6 @@ function drawHead(ctx, s, time, dirtImg) {
     ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke();
     ctx.lineWidth = 3.5; ctx.beginPath(); ctx.arc(side * 152, 38, 11, side > 0 ? -1.3 : Math.PI - 1.8, side > 0 ? 1.8 : Math.PI + 1.3); ctx.stroke();
     if (w.earring) drawEarring(ctx, w.earring, side);
-  }
-  // double chin while slouched
-  const chub = clamp01(1 - s.mew);
-  if (chub > 0.02) {
-    ell(ctx, 0, chin + 2, 66 + 14 * chub, 26 * chub);
-    ctx.fillStyle = sk.base; ctx.fill();
-    ctx.lineWidth = LW; ctx.strokeStyle = INK;
-    ctx.beginPath(); ctx.ellipse(0, chin + 2, 66 + 14 * chub, 26 * chub, 0, 0.15, Math.PI - 0.15); ctx.stroke();
   }
   // face
   ctx.fillStyle = sk.shade; ctx.fill(hp);
@@ -520,6 +648,7 @@ function drawHead(ctx, s, time, dirtImg) {
     for (const [fx, fy] of FRECKLES) for (const side of [-1, 1]) { ell(ctx, fx * side, fy, 3, 3); ctx.fill(); }
     ctx.globalAlpha = 1;
   }
+  drawSpots(ctx, s);
   ctx.restore();
   ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke(hp);
   if (j > 0.6 && s.nick < 0.05) {
@@ -535,12 +664,14 @@ function drawHead(ctx, s, time, dirtImg) {
     for (const side of [-1, 1]) for (const [x, y, r] of [[118, 112, 22], [94, 146, 20], [58, 170, 18]]) { ell(ctx, side * x, y, r, r * 0.7); ctx.fill(); }
     ctx.restore();
   }
-  if (w.wrinkles) drawWrinkles(ctx);
+  // a patient here for the iron has their wrinkles drawn as lines to iron instead
+  if (s.wrk.length) drawWrinkleLines(ctx, s); else if (w.wrinkles) drawWrinkles(ctx);
   drawPimples(ctx, s, time);
   drawScars(ctx, s, time);
+  drawCircles(ctx, s);
   drawEyes(ctx, s);
   drawBrows(ctx, s);
-  drawNose(ctx, w.nose);
+  drawNose(ctx, w.nose, s.nose, sk);
   if (w.glasses) drawGlasses(ctx, w.glasses, w.eyeSize || 1);
   if (w.piercings) drawPiercings(ctx);
   if (w.mole && !w.mustache) { ell(ctx, w.mole * 48, 104, 4.5, 4.5); ctx.fillStyle = '#4a2a24'; ctx.fill(); }

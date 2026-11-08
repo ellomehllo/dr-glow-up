@@ -1,4 +1,4 @@
-import { RANKS } from './config.js';
+import { RANKS, LEVELS } from './config.js';
 
 // Score a release against a sweet zone. Inside the zone: 88-100 by distance from the
 // centre. Outside: falls off quickly so a sloppy release is clearly worse.
@@ -35,7 +35,7 @@ export function auraOf(scores) {
 // Automated ?debug runs save under their own key so they never touch a player's progress.
 const DEBUG = new URLSearchParams(location.search).has('debug');
 const KEY = DEBUG ? 'marblemaxx.progress.debug' : 'marblemaxx.progress.v2';
-const LEVEL_COUNT = 5;
+const LEVEL_COUNT = LEVELS.length;
 export function loadProgress() {
   const fresh = { unlocked: 1, best: Array(LEVEL_COUNT).fill(0) };
   try {

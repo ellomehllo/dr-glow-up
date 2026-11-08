@@ -80,7 +80,7 @@ button { font: inherit; color: inherit; }
   background: rgba(255, 255, 255, .6);
 }
 .aura-track i { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(58, 39, 71, .22); }
-.aura-track i.pass { width: 4px; margin-left: -1px; background: var(--ink); }
+.aura-track i.pass { width: 4px; margin-left: -2px; background: var(--ink); transition: left .5s var(--soft); }
 .aura-num {
   font-weight: 700; font-size: 22px; min-width: 2.2ch; text-align: right; color: #fff;
   -webkit-text-stroke: 5px var(--ink); paint-order: stroke fill;
@@ -99,6 +99,12 @@ button { font: inherit; color: inherit; }
 .steps li.ok { background: var(--mint); }
 .steps li.bad { background: var(--coral); }
 .steps li.ok.now, .steps li.bad.now { animation: none; }
+.steps li { position: relative; }
+.steps li.new::after {
+  content: 'NEW'; position: absolute; top: -9px; right: -12px; padding: 1px 4px; border-radius: 6px;
+  font-size: 9px; font-weight: 700; letter-spacing: .04em; line-height: 1.2; color: #fff;
+  background: var(--pink); border: 2px solid var(--ink); transform: rotate(12deg);
+}
 @keyframes hop { 0%, 100% { transform: translateY(-2px) scale(1.18); } 50% { transform: translateY(-6px) scale(1.18); } }
 #ui.final .steps { opacity: 0; transition: opacity .3s; }
 
@@ -136,6 +142,26 @@ button { font: inherit; color: inherit; }
 .sp-k { font-weight: 700; font-size: 18px; letter-spacing: .14em; color: var(--muted); }
 .sp-n { font-weight: 700; font-size: 76px; color: var(--gold); -webkit-text-stroke: 10px var(--ink); paint-order: stroke fill; }
 .splash.on { animation: slam 1.5s var(--soft) forwards; }
+.splash.long.on { animation-duration: 2.3s; }
+.sp-ch { font-weight: 700; font-size: 15px; letter-spacing: .12em; color: #fff; background: var(--sky); border: 3px solid var(--ink); border-radius: 999px; padding: 4px 12px 3px; margin-bottom: 8px; line-height: 1; }
+.splash.boss .sp-k { color: #d9466d; }
+.splash.boss .sp-in { background: #fff4d1; }
+.sp-new { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
+.sp-nw, .rs-nw {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 5px; border-radius: 999px;
+  background: var(--pink); border: 3px solid var(--ink); box-shadow: 0 4px 0 var(--ink); color: #fff;
+}
+.sp-nw b, .rs-nw b { font-weight: 700; font-size: 18px; letter-spacing: .04em; -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; }
+.sp-ico { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); border: 3px solid var(--ink); color: var(--ink); }
+.sp-ico .ico { width: 22px; height: 22px; }
+.splash.on .sp-nw { animation: wiggle 1s ease-in-out .35s 2; }
+@keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg) scale(1.06); } 75% { transform: rotate(6deg) scale(1.06); } }
+.rs-new { display: flex; justify-content: center; gap: 8px; }
+.rs-nw { padding: 3px 5px 3px 12px; box-shadow: 0 3px 0 var(--ink); }
+.rs-nw b { font-size: 15px; }
+.rs-nw .sp-ico { width: 30px; height: 30px; }
+.rs-nw .sp-ico .ico { width: 18px; height: 18px; }
+.results.in .rs-nw { animation: badge .7s var(--pop) .9s both; }
 
 /* ---------- hold prompt ---------- */
 .dock { position: absolute; left: 0; right: 0; bottom: var(--safe-b); display: flex; justify-content: center; padding: 0 12px; }

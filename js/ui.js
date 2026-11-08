@@ -1,9 +1,9 @@
-// DOM overlay, kept nearly text-free: level pips, AURA meter, treatment badges, a hold
+// DOM overlay, kept nearly text-free: level badge, AURA meter, treatment badges, a hold
 // prompt with its progress meter (fill, sweet-zone band, star marker) and first-time
 // hand hint, toasts, verdict stickers, a level splash, and the results card with the
 // before/after slider. Line icons only (icons.js).
 import { ICONS, STAR } from './icons.js';
-import { RANKS, PASS } from './config.js';
+import { RANKS } from './config.js';
 
 const VERDICT = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!' };
 
@@ -18,7 +18,7 @@ export class UI {
           <div class="lvls" role="status" aria-label="Level 1"><span class="lv-k" aria-hidden="true">LV</span><b class="lv-n">1</b></div>
           <div class="aura" aria-label="Aura">
             <span class="aura-lbl">AURA</span>
-            <div class="aura-track"><div class="aura-fill"></div>${RANKS.slice(1).map((r) => `<i class="${r.min === PASS ? 'pass' : ''}" style="left:${r.min}%"></i>`).join('')}</div>
+            <div class="aura-track"><div class="aura-fill"></div>${RANKS.slice(1).map((r) => `<i style="left:${r.min}%"></i>`).join('')}<i class="pass" style="left:50%"></i></div>
             <span class="aura-num">0</span>
           </div>
           <button class="mute" data-ui type="button" aria-label="Mute sound" aria-pressed="false">${ICONS.soundOn}</button>
@@ -29,7 +29,7 @@ export class UI {
         <h1 class="tc-logo" aria-label="Dr. Glow Up"><span class="w0">${letters('DR.', 0)}</span><span class="w1">${letters('GLOW', 3)}</span><span class="w2">${letters('UP', 7)}</span></h1>
         <div class="tc-go">${ICONS.hand}<span>HOLD TO START</span></div>
       </div>
-      <div class="splash" aria-live="polite"><div class="sp-in"><span class="sp-k">LEVEL</span><b class="sp-n">1</b></div></div>
+      <div class="splash" aria-live="polite"><div class="sp-in"><span class="sp-ch"></span><span class="sp-k">LEVEL</span><b class="sp-n">1</b></div><div class="sp-new"></div></div>
       <div class="dock">
         <div class="card">
           <div class="prompt">
@@ -48,6 +48,7 @@ export class UI {
         <div class="rs-aura"><b></b><span class="rs-best">${ICONS.star}<span></span></span></div>
         <div class="rs-near"></div>
         <ol class="rs-bars"></ol>
+        <div class="rs-new"></div>
         <div class="rs-btns">
           <button class="again" data-ui type="button" aria-label="Try again with a new patient">${ICONS.again}</button>
           <button class="next" data-ui type="button" aria-label="Next level">${ICONS.next}</button>
@@ -57,7 +58,8 @@ export class UI {
     this.el = {
       hud: q('.hud-top'), bar: q('.bar'), mute: q('.mute'), num: q('.aura-num'), fill: q('.aura-fill'), aura: q('.aura'),
       lvls: q('.lvls'), lvlN: q('.lv-n'), stepsList: q('.steps'), steps: [],
-      title: q('.title-card'), splash: q('.splash'), spN: q('.sp-n'), dock: q('.dock'), card: q('.card'),
+      title: q('.title-card'), splash: q('.splash'), spN: q('.sp-n'), spK: q('.sp-k'), spCh: q('.sp-ch'), spNew: q('.sp-new'),
+      dock: q('.dock'), card: q('.card'), pass: q('.aura-track .pass'), rsNew: q('.rs-new'),
       prompt: q('.prompt'), prIco: q('.pr-ico'), prText: q('.pr-text'),
       zone: q('.mt-zone'), mfill: q('.mt-fill'), star: q('.mt-star'), toast: q('.toast'),
       stamp: q('.stamp'), stVerdict: q('.st-verdict'), stScore: q('.st-score'),
@@ -98,18 +100,29 @@ export class UI {
     this.el.lvls.classList.remove('pop'); void this.el.lvls.offsetWidth; this.el.lvls.classList.add('pop');
   }
 
-  setSteps(defs) {
+  // one badge per treatment of the level; one that is new on this level gets a NEW tag
+  setSteps(defs, fresh = []) {
     const e = this.el;
-    e.stepsList.innerHTML = defs.map((d) => `<li aria-label="${d.name}">${ICONS[d.icon]}</li>`).join('');
+    e.stepsList.innerHTML = defs.map((d) => `<li class="${fresh.includes(d.id) ? 'new' : ''}" aria-label="${d.name}">${ICONS[d.icon]}</li>`).join('');
     e.steps = [...e.stepsList.querySelectorAll('li')];
   }
-  levelSplash(n) {
-    const e = this.el;
+  // the aura a level needs to pass, marked on the meter
+  setPass(p) { this.el.pass.style.left = `${p}%`; }
+  // info: { chapter, first (first level of a chapter), boss, fresh: [treatment defs] }
+  levelSplash(n, info = {}) {
+    const e = this.el, fresh = info.fresh || [];
     e.spN.textContent = String(n);
+    e.spK.textContent = info.boss ? 'BOSS LEVEL' : 'LEVEL';
+    e.spCh.textContent = info.first ? `CHAPTER ${info.chapter}` : '';
+    e.spCh.hidden = !info.first;
+    e.spNew.innerHTML = fresh.map((d) => `<span class="sp-nw" aria-label="New: ${d.name}"><span class="sp-ico">${ICONS[d.icon]}</span><b>NEW!</b></span>`).join('');
+    e.spNew.hidden = !fresh.length;
+    e.splash.classList.toggle('long', fresh.length > 0);
+    e.splash.classList.toggle('boss', !!info.boss);
     e.splash.classList.remove('on'); void e.splash.offsetWidth;
     e.splash.classList.add('on');
     clearTimeout(this.splashTimer);
-    this.splashTimer = setTimeout(() => e.splash.classList.remove('on'), 1500);
+    this.splashTimer = setTimeout(() => e.splash.classList.remove('on'), fresh.length ? 2300 : 1500);
   }
 
   showTool(def, i) {
@@ -198,6 +211,9 @@ export class UI {
         <span class="rb-bar"><i style="--s:${(b.score / 100).toFixed(3)};animation-delay:${(0.5 + i * 0.07).toFixed(2)}s"></i></span>
         <span class="rb-sc">${b.score}</span>
       </li>`).join('');
+    const unlock = r.unlock || [];
+    e.rsNew.innerHTML = unlock.map((d) => `<span class="rs-nw" aria-label="Unlocked: ${d.name}"><b>NEW</b><span class="sp-ico">${ICONS[d.icon]}</span></span>`).join('');
+    e.rsNew.hidden = !unlock.length;
     e.next.disabled = !r.passed;
     e.next.innerHTML = r.passed ? ICONS.next : ICONS.lock;
     e.results.classList.toggle('passed', r.passed);

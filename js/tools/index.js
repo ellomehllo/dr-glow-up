@@ -7,6 +7,11 @@ import { MewTool } from './mew.js';
 import { RaspTool } from './rasp.js';
 import { GoldTool } from './gold.js';
 import { PolishTool } from './polish.js';
+import { NoseTool } from './nose.js';
+import { CirclesTool } from './circles.js';
+import { LaserTool } from './laser.js';
+import { TeethTool } from './teeth.js';
+import { IronTool } from './iron.js';
 
 export const REGISTRY = {
   scrub: ScrubTool,
@@ -16,4 +21,9 @@ export const REGISTRY = {
   rasp: RaspTool,
   gold: GoldTool,
   polish: PolishTool,
+  nose: NoseTool,
+  circles: CirclesTool,
+  laser: LaserTool,
+  teeth: TeethTool,
+  iron: IronTool,
 };

@@ -4,20 +4,18 @@
 // and the gel spills over and drips.
 import { Tool, drawTapHint } from './base.js';
 import { rand, star5 } from '../draw.js';
-import { INK, COL, CRACKS, headToStage, applyHead } from '../patient.js';
-
-// one target per scar: its middle, and a radius that covers its length
-const SCARS = CRACKS.map((c) => { const m = c.poly.at(c.poly.len / 2); return { x: m.x, y: m.y, r: c.poly.len / 2 + 16 }; });
+import { INK, COL, headToStage, applyHead } from '../patient.js';
 
 export class GoldTool extends Tool {
   constructor(g, def) { super(g, def); this.outroLen = 0.9; this.reset(); }
   reset() { super.reset(); this.dripT = 0; this.glit = 0; this.pour = 0; this.healing = new Set(); this.tube = null; }
-  targets() { return this.g.s.scars ? SCARS : []; }
+  // one target per scar the patient has: its middle, with a radius covering its length
+  targets() { return this.g.s.cracks.map((c) => c.t); }
   // anywhere close to the line of a scar counts
   hitTest(hx, hy, sx, sy, minR = 0) {
     let best = -1, bd = Infinity;
-    CRACKS.forEach((c, i) => {
-      if (this.done[i] || !this.g.s.scars) return;
+    this.g.s.cracks.forEach((c, i) => {
+      if (this.done[i]) return;
       for (let k = 0; k <= 8; k++) {
         const q = c.poly.at((c.poly.len * k) / 8), d = Math.hypot(hx - q.x, hy - q.y);
         if (d <= Math.max(30, minR) && d < bd) { bd = d; best = i; }
@@ -28,10 +26,10 @@ export class GoldTool extends Tool {
   enter() { super.enter(); this.g.s.lookAt = { x: 40, y: -200 }; this.tube = null; }
   // stage-space point at fraction f along scar i
   front(i, f) {
-    const c = CRACKS[i], q = c.poly.at(c.poly.len * Math.min(1, f));
+    const c = this.g.s.cracks[i], q = c.poly.at(c.poly.len * Math.min(1, f));
     return headToStage(this.g.s, q.x, q.y);
   }
-  begin(i) { this.g.s.lookAt = { x: SCARS[i].x, y: SCARS[i].y }; this.dripT = 0.2; } // first drip right at overflow
+  begin(i) { const t = this.g.s.cracks[i].t; this.g.s.lookAt = { x: t.x, y: t.y }; this.dripT = 0.2; } // first drip right at overflow
   hold(dt, p) {
     super.hold(dt, p);
     const { g } = this, s = g.s, i = this.cur;
@@ -49,7 +47,7 @@ export class GoldTool extends Tool {
       this.dripT += dt;
       if (this.dripT > 0.16 && s.drips.length < 12) {
         this.dripT = 0;
-        const e = CRACKS[i].pts[CRACKS[i].pts.length - 1];
+        const P = s.cracks[i].pts, e = P[P.length - 1];
         s.drips.push({ x: e[0] + rand(-8, 8), y: e[1], len: 0, max: rand(22, 48), v: rand(50, 90), w: rand(4, 6) });
         if (Math.random() < 0.5) g.audio.drip();
       }
@@ -77,6 +75,7 @@ export class GoldTool extends Tool {
   update(dt) {
     super.update(dt);
     const { g } = this, s = g.s;
+    if (!s.cracks.length) return;
     if (this.cur < 0) this.pour = Math.max(0, this.pour - dt * 5);
     for (const i of this.healing) {
       if (s.scarH[i] >= 1) continue;
@@ -95,14 +94,14 @@ export class GoldTool extends Tool {
   }
   exit() { super.exit(); this.idle(); for (const i of this.healing) this.g.s.scarH[i] = 1; }
   draw(ctx, time) {
-    if (this.alpha < 0.01 || !this.tube) return;
+    if (this.alpha < 0.01 || !this.tube || !this.g.s.cracks.length) return;
     const { g } = this, s = g.s;
     const a = this.alpha * (this.outro ? Math.max(0, 1 - this.outroT * 1.8) : 1);
     if (a < 0.01) return;
     ctx.save();
     ctx.globalAlpha = a;
     // a star at the end of every scar still to treat
-    CRACKS.forEach((c, i) => {
+    s.cracks.forEach((c, i) => {
       if (this.done[i]) return;
       const e = this.front(i, 1), held = i === this.cur;
       const zone = held && this.inZone(this.p), full = held && s.scarF[i] >= 0.995;
@@ -115,7 +114,8 @@ export class GoldTool extends Tool {
       const i = this.nextIndex();
       if (i >= 0) {
         ctx.save(); applyHead(ctx, s);
-        drawTapHint(ctx, SCARS[i].x, SCARS[i].y, time, true, g.hint ? 1 : this.nudge, 0.9);
+        const t = s.cracks[i].t;
+        drawTapHint(ctx, t.x, t.y, time, true, g.hint ? 1 : this.nudge, 0.9);
         ctx.restore();
       }
     }

@@ -1,4 +1,4 @@
-// The run. Five levels, each with a new patient. One controller drives every
+// The run. Fifty levels in five chapters, each with a new patient. One controller drives every
 // treatment of the level in order:
 //   intro | arrive -> transition -> ready <-> holding | brushing -> outro -> next
 // In `ready` the player presses ON a target (a pimple, a scar, the jaw...) and holds;
@@ -6,10 +6,10 @@
 // targets are done. Brush treatments (wash, hair) are dragged over the patient instead.
 // Then the finale (happy hops, sparkle shower, camera flash) and the results screen
 // with a before/after split. Treatments only react through the hooks in tools/base.js.
-import { TOOLS, LEVELS, PASS, VIEWS } from './config.js';
+import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE } from './config.js';
 import { REGISTRY } from './tools/index.js';
 import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress } from './scoring.js';
-import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, PIMPLE_SPOTS } from './patient.js';
+import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
 import { randomPatient } from './people.js';
 import { easeIO, rand, TAU } from './draw.js';
 
@@ -23,6 +23,19 @@ const WORD = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TO
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; }
   return a;
+}
+// n of the list, at random, kept in the list's own order
+const some = (list, n) => shuffle(list.slice()).slice(0, n).sort((a, b) => list.indexOf(a) - list.indexOf(b));
+// sun spots for the laser, apart from each other and from the pimples
+function pickSpots(n, pimples) {
+  const out = [];
+  for (const c of shuffle(SPOT_SPOTS.slice())) {
+    if (out.length >= n) break;
+    if (pimples.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < p.r + 26)) continue;
+    if (out.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < 34)) continue;
+    out.push({ x: c.x + rand(-5, 5), y: c.y + rand(-5, 5), r: rand(7, 11.5), rot: rand(0, TAU) });
+  }
+  return out;
 }
 
 export class Game {
@@ -62,19 +75,34 @@ export class Game {
     this.input.on('up', (src) => this.onUp(src));
   }
 
-  // a fresh patient for a level: who they are, which pimples, scars, starting pose
+  // a fresh patient for a level: who they are and what they came in with (only what
+  // this level treats: pimples, scars, spots, wrinkles, a big nose, dark circles...)
   makeSetup(level, kind) {
     const L = LEVELS[level], has = (id) => L.tools.includes(id);
+    const pimples = has('pop') ? shuffle(PIMPLE_SPOTS.slice()).slice(0, L.pimples) : [];
     return {
       who: randomPatient(kind),
-      pimples: shuffle(PIMPLE_SPOTS.slice()).slice(0, L.pimples),
-      scars: has('gold'),
+      pimples,
+      cracks: has('gold') ? some(CRACKS, L.scars) : [],
+      spots: has('laser') ? pickSpots(L.spots, pimples) : [],
+      wrinkles: has('iron') ? some(WRINKLES, L.wrinkles) : [],
       jaw0: has('chisel') ? 0 : 0.7,
       mew0: has('mew') ? 0 : 1,
       hair0: has('rasp') ? 0 : 1,
       brow0: has('rasp') ? 0 : 0.75,
-      dirt: L.dirt,
+      nose0: has('nose') ? 0 : 1,
+      circ0: has('circles') ? 1 : 0,
+      teeth0: has('teeth') ? 0 : 1,
+      dirt: has('scrub') ? L.dirt : 0,
       seed: (Math.random() * 1e9) | 0,
+    };
+  }
+  // what the level splash and the HUD show about a level
+  levelInfo(n) {
+    const L = LEVELS[n];
+    return {
+      chapter: L.chapter + 1, first: n % CHAPTER_SIZE === 0, boss: L.boss, pass: L.pass,
+      fresh: L.fresh.map((id) => TOOLS.find((t) => t.id === id)),
     };
   }
   // the level's treatments with its difficulty applied
@@ -100,7 +128,8 @@ export class Game {
     this.director.snap(this.view(VIEWS.intro));
     this.director.setObstruction(this.ui.obstruction('intro'), true);
     this.ui.setLevel(this.level, this.progress.unlocked);
-    this.ui.setSteps(this.defs);
+    this.ui.setSteps(this.defs, LEVELS[this.level].fresh);
+    this.ui.setPass(LEVELS[this.level].pass);
     this.ui.titleCard(true);
     react(this.s, 'normal', 0.01);
   }
@@ -124,8 +153,9 @@ export class Game {
     this.ui.reset();
     this.ui.titleCard(false);
     this.ui.setLevel(n, this.progress.unlocked);
-    this.ui.setSteps(this.defs);
-    this.ui.levelSplash(n + 1);
+    this.ui.setSteps(this.defs, LEVELS[n].fresh);
+    this.ui.setPass(LEVELS[n].pass);
+    this.ui.levelSplash(n + 1, this.levelInfo(n));
     this.director.setObstruction(this.ui.obstruction('play'));
     this.director.go(this.view(VIEWS.intro), 0.6);
     // the new patient hops into the chair
@@ -317,7 +347,7 @@ export class Game {
     const P = this.progress;
     const newBest = aura > (P.best[n] || 0);
     if (newBest) P.best[n] = aura;
-    this.passed = aura >= PASS;
+    this.passed = aura >= LEVELS[n].pass;
     if (this.passed && n + 1 < LEVELS.length) P.unlocked = Math.max(P.unlocked, n + 2);
     saveProgress(P);
     this.playables.save(P);
@@ -337,6 +367,8 @@ export class Game {
       aura, rank: rank.name, next: next && next.name, toNext, near: !!next && toNext < 6, worst,
       bars: idx.map((i, k) => ({ icon: this.defs[i].icon, name: this.defs[i].name, score: scores[k] })),
       best: P.best[n], newBest, passed: this.passed, last: n + 1 === LEVELS.length,
+      // passing opens the next level; show the treatment it brings in, if any
+      unlock: this.passed && n + 1 < LEVELS.length ? this.levelInfo(n + 1).fresh : [],
     });
     this.director.setObstruction(this.ui.obstruction('results'));
     this.ui.layoutSplit(this.director.obsGoal);

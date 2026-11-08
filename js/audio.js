@@ -117,6 +117,27 @@ export class Sound {
       n.connect(f).connect(ng).connect(trem); n.start();
       trem.connect(g);
     }, 0.35);
+    // laser: a thin electric buzz
+    mk('laser', (g) => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 196;
+      const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = 1568;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1500; f.Q.value = 1.4;
+      const g2 = ctx.createGain(); g2.gain.value = 0.15;
+      const trem = ctx.createGain(); trem.gain.value = 0.7;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 31; const d = ctx.createGain(); d.gain.value = 0.3; lfo.connect(d).connect(trem.gain); lfo.start();
+      o.connect(f); o2.connect(g2).connect(f); f.connect(trem).connect(g); o.start(); o2.start();
+    }, 0.1);
+    // iron: a steamy hiss
+    mk('steam', (g) => {
+      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 3200;
+      const am = ctx.createGain(); am.gain.value = 0.7;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 3; const d = ctx.createGain(); d.gain.value = 0.25; lfo.connect(d).connect(am.gain); lfo.start();
+      n.connect(f).connect(am).connect(g); n.start();
+    }, 0.15);
+    // whitening lamp: a soft electric hum
+    mk('hum', (g) => {
+      [220, 440, 660].forEach((fr, i) => { const o = ctx.createOscillator(); o.type = i ? 'sine' : 'triangle'; o.frequency.value = fr; o.detune.value = i * 4; const og = ctx.createGain(); og.gain.value = 0.16 / (i + 1); o.connect(og).connect(g); o.start(); });
+    }, 0.2);
   }
   level(name, v, tc = 0.04) {
     if (!this.ctx) return;
@@ -269,6 +290,24 @@ export class Sound {
     this._burst(t, 0.02, 0.3, 'bandpass', 2600, 4, 0.05);
     this._burst(t + 0.07, 0.025, 0.35, 'bandpass', 1800, 4, 0.05);
     this._tone(880, t + 0.07, 0.25, 0.08, 'triangle', null, 0.3);
+  }
+  // laser zapping a spot away
+  zap(pitch = 1) {
+    if (!this.ctx) return; const t = this._t;
+    this._tone(2600 * pitch, t, 0.12, 0.08, 'square', 500 * pitch, 0.1);
+    this._burst(t, 0.03, 0.18, 'highpass', 4000, 0.8, 0.05);
+  }
+  // the little rubber mallet tapping a nose into shape
+  knock(pitch = 1) {
+    if (!this.ctx) return; const t = this._t;
+    this._tone(520 * pitch, t, 0.06, 0.16, 'triangle', 260 * pitch, 0.08);
+    this._burst(t, 0.02, 0.2, 'bandpass', 1300 * pitch, 3, 0.05);
+  }
+  // a nose shrunk too far
+  oink() {
+    if (!this.ctx) return; const t = this._t;
+    this._tone(330, t, 0.11, 0.12, 'square', 220, 0.1);
+    this._tone(350, t + 0.15, 0.13, 0.12, 'square', 210, 0.1);
   }
   drip() { if (!this.ctx) return; const t = this._t; this._tone(1100, t, 0.08, 0.07, 'sine', 500, 0.3); }
   tick() { if (!this.ctx) return; const t = this._t; this._tone(1760, t, 0.06, 0.06, 'triangle', null, 0.1); }
