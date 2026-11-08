@@ -17,7 +17,13 @@ export class HoldInput {
       if (e.button !== undefined && e.button > 0) return;
       e.preventDefault();
       this._first();
-      if (this.pointerId !== null) return;
+      if (this.pointerId !== null) {
+        // a second finger while one is holding: ignore it
+        if (e.pointerId !== this.pointerId && !e.isPrimary) return;
+        // a fresh first press while we think one is still down means its release was
+        // lost (let go outside the page, a system gesture): drop it so this press counts
+        this.cancel();
+      }
       this.pointerId = e.pointerId;
       this.x = e.clientX; this.y = e.clientY;
       try { surface.setPointerCapture(e.pointerId); } catch { /* not capturable */ }

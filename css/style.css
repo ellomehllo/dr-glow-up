@@ -28,6 +28,8 @@ html, body {
 #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #ui { position: fixed; inset: 0; pointer-events: none; overflow: hidden; overflow: clip; }
 #ui [data-ui] { pointer-events: auto; }
+/* hidden controls must never catch a touch meant for the patient */
+#ui .ba:not(.in) [data-ui], #ui .results:not(.in), #ui .results:not(.in) [data-ui] { pointer-events: none; }
 .ico { width: 22px; height: 22px; display: block; }
 button { font: inherit; color: inherit; }
 
@@ -224,10 +226,9 @@ button { font: inherit; color: inherit; }
 /* ---------- before / after ---------- */
 .ba { position: absolute; height: 48px; opacity: 0; pointer-events: none; transition: opacity .4s .9s; }
 .ba.in { opacity: 1; }
-.ba.in .ba-range { pointer-events: auto; }
 .ba-range {
   -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 48px;
-  margin: 0; background: transparent; cursor: ew-resize; pointer-events: none; touch-action: pan-y;
+  margin: 0; background: transparent; cursor: ew-resize; touch-action: pan-y;
 }
 .ba-range:focus-visible { outline: none; }
 .ba-range::-webkit-slider-runnable-track { height: 48px; background: transparent; }
