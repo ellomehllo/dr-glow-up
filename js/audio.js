@@ -13,7 +13,7 @@ export class Sound {
   }
   get ready() { return !!this.ctx; }
   init() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    if (this.ctx) { this.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = (this.ctx = new AC());
@@ -41,8 +41,20 @@ export class Sound {
   _applyVol() { if (this.ctx) this.master.gain.setTargetAtTime(this._targetVol(), this.ctx.currentTime, 0.05); }
   setMuted(m) { this.muted = m; this._applyVol(); }
   setPlatformAudio(on) { this.platformOn = on; this._applyVol(); }
-  suspend() { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); }
-  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+  suspend() { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend().catch(() => {}); }
+  // 'interrupted' is iOS after a call or a trip to the home screen
+  resume() { if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') this.ctx.resume().catch(() => {}); }
+  // iPhone Safari only lets sound start from a tap's release (touchend, click), not from
+  // the touch going down, so every release calls this. Once sound runs it does nothing.
+  unlock() {
+    if (!this.ctx) this.init();
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+    this.resume();
+    // a silent blip started inside the gesture fully opens the output on iOS
+    const b = ctx.createBufferSource();
+    b.buffer = ctx.createBuffer(1, 1, 22050); b.connect(ctx.destination); b.start(0);
+  }
 
   _noise(loop = true) {
     const s = this.ctx.createBufferSource();

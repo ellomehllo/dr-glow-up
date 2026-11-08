@@ -31,6 +31,11 @@ const ui = new UI(document.getElementById('ui'), {
   onSplit: (v) => game && game.setSplit(v),
 });
 input.on('first', () => audio.init());
+// every release, anywhere on the page, nudges the sound awake (needed on iPhone)
+for (const type of ['pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(type, () => audio.unlock(), { capture: true, passive: true });
+// on iPhone, web audio is silenced by the ring/silent switch unless the page plays like
+// video does. Not inside YouTube Playables, which owns the audio there.
+if (!playables.present && navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch { /* unsupported */ } }
 if (audio.muted) ui.setMuted(true);
 audio.setPlatformAudio(playables.audioEnabled());
 playables.onAudioChange((on) => audio.setPlatformAudio(on));
