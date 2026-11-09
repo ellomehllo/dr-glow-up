@@ -1,0 +1,11 @@
+.git
+.claude
+.DS_Store
+.gitignore
+.assetsignore
+.wrangler
+node_modules
+supabase
+cloudflare
+wrangler.jsonc
+README.md

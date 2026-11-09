@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#d6f3ec">
   <title>Dr. Glow Up</title>
+  <script>
+    // the game moved to doctorglowup.site: the old GitHub Pages address forwards there and
+    // carries this browser's progress along (storage belongs to each address)
+    if (/\.github\.io$/.test(location.hostname)) {
+      var carried = ''; try { carried = localStorage.getItem('marblemaxx.progress.v2') || ''; } catch (e) {}
+      location.replace('https://doctorglowup.site/' + (carried ? '#carry=' + encodeURIComponent(carried) : ''));
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap">

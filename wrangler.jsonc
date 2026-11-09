@@ -1,0 +1,18 @@
+// Cloudflare Worker that serves doctorglowup.site (deploy: `wrangler deploy`).
+// The site is the repo root as static assets; .assetsignore keeps the rest private.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dr-glow-up",
+  "main": "cloudflare/worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "routes": [
+    { "pattern": "doctorglowup.site", "custom_domain": true },
+    { "pattern": "www.doctorglowup.site", "custom_domain": true }
+  ],
+  "workers_dev": true
+}
