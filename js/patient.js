@@ -2,7 +2,8 @@
 // origin at the head's ideal resting centre, y pointing down. Every draw reads one
 // plain state object (with the person's look in `s.who`), so the results screen can
 // draw the untreated "before" patient from a second copy.
-import { TAU, clamp01, lerp, smooth, easeOutBack, Poly, cubic, INK, ell, star4 } from './draw.js';
+import { TAU, clamp01, lerp, smooth, easeOutBack, Poly, cubic, INK, ell, star4, soft, mixHex, rgba } from './draw.js';
+import { toneOf, LASH, OL } from './tones.js';
 import { CURLS, CAP, tuftKept, drawHair, drawBackHair } from './hair.js';
 import { drawBody, drawNeck, drawBehind } from './outfits.js';
 import { mix } from './people.js';
@@ -248,15 +249,15 @@ function drawChair(ctx) {
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.roundRect(-336, 168, 672, 1300, [120, 120, 40, 40]);
   ctx.fillStyle = g.vinyl; ctx.fill();
-  ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke();
+  ctx.lineWidth = 4.5; ctx.strokeStyle = INK; ctx.stroke();
   ctx.beginPath(); ctx.roundRect(-300, 204, 600, 1240, [96, 96, 30, 30]);
   ctx.setLineDash([2, 16]); ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(58,39,71,0.3)'; ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.beginPath(); ctx.roundRect(-286, 214, 70, 300, 35); ctx.fill();
   // headrest post and pad
-  ctx.beginPath(); ctx.roundRect(-30, 150, 60, 50, 10); ctx.fillStyle = '#d9d2e6'; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = INK; ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(-30, 150, 60, 50, 10); ctx.fillStyle = '#d9d2e6'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
   ctx.beginPath(); ctx.roundRect(-206, -10, 412, 182, 70);
-  ctx.fillStyle = g.vinyl; ctx.fill(); ctx.lineWidth = LW; ctx.stroke();
+  ctx.fillStyle = g.vinyl; ctx.fill(); ctx.lineWidth = 4.5; ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.beginPath(); ctx.roundRect(-190, 6, 60, 120, 30); ctx.fill();
 }
@@ -310,7 +311,7 @@ function drawPimples(ctx, s, time) {
 }
 
 function drawEyes(ctx, s) {
-  const w = s.who, e = w.eyeSize || 1;
+  const w = s.who, e = w.eyeSize || 1, T = toneOf(w.skin);
   const hunter = clamp01((s.browL + s.browR) / 2);
   const sad = clamp01(-s.moodV) * (1 - hunter) * (1 - s.angerV);
   for (const side of [-1, 1]) {
@@ -318,29 +319,43 @@ function drawEyes(ctx, s) {
     let kind = s.expr;
     if (kind === 'wink') kind = side > 0 ? 'happy' : 'normal';
     if (s.eyeShut[i] > 0) kind = 'squeeze'; // just hurt: squeezed shut
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = INK;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (kind === 'happy') {
-      ctx.lineWidth = LW + 1;
+      // closed and smiling: the lash line arches up, with a soft crease above it
+      ctx.lineWidth = 4.4; ctx.strokeStyle = LASH;
       ctx.beginPath(); ctx.arc(cx, cy + 10, 20 * e, Math.PI * 1.12, Math.PI * 1.88); ctx.stroke();
-      if (w.lashes) { ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx + side * 19, cy + 2); ctx.lineTo(cx + side * 27, cy - 4); ctx.stroke(); }
+      ctx.globalAlpha = 0.45; ctx.lineWidth = 2.2; ctx.strokeStyle = T.line;
+      ctx.beginPath(); ctx.arc(cx, cy + 8, 27 * e, Math.PI * 1.26, Math.PI * 1.74); ctx.stroke();
+      ctx.globalAlpha = 1;
+      const ox = cx + side * 18.6 * e, oy = cy + 10 - 7.4 * e;
+      ctx.lineWidth = w.lashes ? 3.2 : 2.4; ctx.strokeStyle = LASH;
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + side * 7, oy - 5);
+      if (w.lashes) { ctx.moveTo(ox - side * 6, oy - 6); ctx.lineTo(ox - side * 3, oy - 13); }
+      ctx.stroke();
       continue;
     }
     if (kind === 'squeeze') {
-      if (red > 0.02) { ell(ctx, cx, cy, 24, 17); ctx.fillStyle = `rgba(255,80,100,${0.35 * red})`; ctx.fill(); }
-      ctx.lineWidth = LW + 1;
+      if (red > 0.02) soft(ctx, cx, cy, 32, 24, '#ff5064', 0.5 * red);
+      ctx.lineWidth = 4.4; ctx.strokeStyle = LASH;
       ctx.beginPath();
       ctx.moveTo(cx + side * 14, cy - 11); ctx.lineTo(cx - side * 12, cy); ctx.lineTo(cx + side * 14, cy + 11);
       ctx.stroke();
+      // crinkles at the outer corner
+      ctx.globalAlpha = 0.55; ctx.lineWidth = 2.2; ctx.strokeStyle = T.line;
+      ctx.beginPath(); ctx.moveTo(cx + side * 23, cy - 7); ctx.lineTo(cx + side * 31, cy - 12); ctx.moveTo(cx + side * 24, cy + 6); ctx.lineTo(cx + side * 32, cy + 10); ctx.stroke();
+      ctx.globalAlpha = 1;
       continue;
     }
     const wide = kind === 'wide';
     const rx = EYE.rx * e * (wide ? 1.1 : 1), ry = EYE.ry * e * (wide ? 1.25 : 1);
     ctx.save(); ctx.translate(cx, cy);
     const eye = new Path2D(); eye.ellipse(0, 0, rx, ry, 0, 0, TAU);
-    ctx.fillStyle = red > 0.02 ? mix('#ffffff', '#ffb0bb', red) : '#fff'; ctx.fill(eye);
+    ctx.fillStyle = red > 0.02 ? mix('#ffffff', '#ffb0bb', red) : '#fbf7fa'; ctx.fill(eye);
     ctx.save(); ctx.clip(eye);
+    // the corners of the eyeball sit in a little shadow
+    soft(ctx, -rx, 0, rx * 0.5, ry, w.skin.deep, 0.22); soft(ctx, rx, 0, rx * 0.5, ry, w.skin.deep, 0.22);
     if (red > 0.02) { // bloodshot: little red veins from the corners
-      ctx.globalAlpha = red; ctx.strokeStyle = '#e8384f'; ctx.lineWidth = 2;
+      ctx.globalAlpha = red; ctx.strokeStyle = '#e8384f'; ctx.lineWidth = 1.8;
       ctx.beginPath();
       for (const k of [-1, 1]) {
         ctx.moveTo(k * rx, -3); ctx.lineTo(k * rx * 0.62, -6); ctx.lineTo(k * rx * 0.45, -2);
@@ -348,12 +363,23 @@ function drawEyes(ctx, s) {
       }
       ctx.stroke(); ctx.globalAlpha = 1;
     }
+    // the iris: lighter low down, a dark rim, fine fibres, the pupil and two catchlights
     const lx = s.look.x * 9, ly = s.look.y * 6 + 2, ir = (wide ? 10 : 13) * e;
-    ell(ctx, lx, ly, ir, ir); ctx.fillStyle = w.eye.c; ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = w.eye.d; ctx.stroke();
-    ell(ctx, lx, ly, ir * 0.5, ir * 0.5); ctx.fillStyle = '#1e1418'; ctx.fill();
+    const ig = ctx.createRadialGradient(lx - ir * 0.1, ly + ir * 0.4, 0, lx, ly, ir);
+    ig.addColorStop(0, mixHex(w.eye.c, '#ffffff', 0.4)); ig.addColorStop(0.55, w.eye.c); ig.addColorStop(1, w.eye.d);
+    ell(ctx, lx, ly, ir, ir); ctx.fillStyle = ig; ctx.fill();
+    ctx.globalAlpha = 0.4; ctx.lineWidth = 1.1; ctx.strokeStyle = mixHex(w.eye.c, '#ffffff', 0.55);
+    ctx.beginPath();
+    for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU + 0.2; ctx.moveTo(lx + Math.cos(a) * ir * 0.56, ly + Math.sin(a) * ir * 0.56); ctx.lineTo(lx + Math.cos(a) * ir * 0.86, ly + Math.sin(a) * ir * 0.86); }
+    ctx.stroke(); ctx.globalAlpha = 1;
+    ell(ctx, lx, ly, ir, ir); ctx.lineWidth = 1.8; ctx.strokeStyle = w.eye.d; ctx.stroke();
+    ell(ctx, lx, ly, ir * 0.46, ir * 0.46); ctx.fillStyle = '#1b1218'; ctx.fill();
     ell(ctx, lx - ir * 0.36, ly - ir * 0.4, ir * 0.3, ir * 0.3); ctx.fillStyle = '#fff'; ctx.fill();
-    ell(ctx, lx + ir * 0.32, ly + ir * 0.3, ir * 0.13, ir * 0.13); ctx.fill();
+    ell(ctx, lx + ir * 0.34, ly + ir * 0.3, ir * 0.13, ir * 0.13); ctx.fill();
+    // the lid's shadow across the top of the eyeball
+    const sh = ctx.createLinearGradient(0, -ry, 0, -ry * 0.05);
+    sh.addColorStop(0, rgba(w.skin.deep, 0.5)); sh.addColorStop(1, rgba(w.skin.deep, 0));
+    ctx.fillStyle = sh; ctx.fillRect(-rx, -ry, rx * 2, ry);
     // upper lid: droops when sad, settles low and tilted up at the outer corner with hunter eyes
     let dIn = 0.05, dOut = 0.05;
     dIn = lerp(dIn, 0.12, sad); dOut = lerp(dOut, 0.36, sad);
@@ -367,34 +393,58 @@ function drawEyes(ctx, s) {
     const yi = -ry + dIn * 2 * ry, yo = -ry + dOut * 2 * ry;
     ctx.beginPath();
     ctx.moveTo(xi, -ry - 6); ctx.lineTo(xi, yi); ctx.quadraticCurveTo(0, (yi + yo) / 2 - 4, xo, yo); ctx.lineTo(xo, -ry - 6);
-    ctx.closePath(); ctx.fillStyle = w.skin.shade; ctx.fill();
+    ctx.closePath(); ctx.fillStyle = T.lid; ctx.fill();
     ctx.restore();
-    ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke(eye);
+    // a fine rim and a soft lower lid instead of a heavy ring
+    ctx.lineWidth = 1.6; ctx.strokeStyle = T.line; ctx.globalAlpha = 0.6; ctx.stroke(eye);
+    ctx.globalAlpha = 0.45; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.ellipse(0, 2, rx * 1.03, ry * 1.06, 0, Math.PI * 0.16, Math.PI * 0.84); ctx.stroke();
+    ctx.globalAlpha = 1;
     if (red > 0.02) { // sore, puffy lower lid
-      ctx.lineWidth = 5; ctx.strokeStyle = `rgba(255,80,100,${0.55 * red})`;
+      ctx.lineWidth = 4; ctx.strokeStyle = `rgba(255,80,100,${0.55 * red})`;
       ctx.beginPath(); ctx.arc(0, -ry * 0.2, rx * 1.08, Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
-      ctx.strokeStyle = INK;
     }
-    // upper lid line; eyeliner makes it bolder with a wing
+    // the crease of the lid above
+    ctx.globalAlpha = 0.42 * (1 - s.blink); ctx.lineWidth = 2.2; ctx.strokeStyle = T.line;
+    ctx.beginPath(); ctx.moveTo(xi * 0.86, Math.min(yi, -ry * 0.6) - 9); ctx.quadraticCurveTo(0, Math.min(yi, yo) - ry * 0.55 - 8, xo * 0.96, Math.min(yo, -ry * 0.6) - 8); ctx.stroke();
+    ctx.globalAlpha = 1;
+    // the lash line along the upper lid; eyeliner makes it bolder with a wing
     const liner = w.liner && s.blink < 0.5;
-    ctx.lineWidth = liner ? LW + 3 : LW;
-    ctx.beginPath(); ctx.moveTo(xi * 0.98, yi); ctx.quadraticCurveTo(0, (yi + yo) / 2 - 4, xo, yo);
-    ctx.lineTo(xo + side * (liner ? 18 : 9), yo - (liner ? 13 : 8));
+    ctx.strokeStyle = LASH; ctx.lineWidth = liner ? 5.6 : 3.8;
+    ctx.beginPath(); ctx.moveTo(xi * 0.96, yi + 1); ctx.quadraticCurveTo(0, (yi + yo) / 2 - 4, xo, yo);
+    ctx.lineTo(xo + side * (liner ? 16 : 7), yo - (liner ? 12 : 6));
     ctx.stroke();
     if (w.bags) {
-      ctx.globalAlpha = 0.45; ctx.lineWidth = 4; ctx.strokeStyle = '#7a5a9a';
+      ctx.globalAlpha = 0.4; ctx.lineWidth = 2.6; ctx.strokeStyle = '#7a5a9a';
       ctx.beginPath(); ctx.arc(0, ry * 0.15, rx * 1.02, Math.PI * 0.22, Math.PI * 0.78); ctx.stroke();
-      ctx.globalAlpha = 1; ctx.strokeStyle = INK;
+      ctx.globalAlpha = 1;
     }
-    if (w.lashes && s.blink < 0.5) {
-      ctx.lineWidth = 4;
+    if (w.lashes && s.blink < 0.5) { // three lashes at the outer corner
+      ctx.lineWidth = 2.6; ctx.strokeStyle = LASH;
       ctx.beginPath();
-      ctx.moveTo(xo - side * 4, yo - 2); ctx.lineTo(xo + side * 5, yo - 12);
-      ctx.moveTo(xo - side * 13, yo - 5); ctx.lineTo(xo - side * 8, yo - 15);
+      ctx.moveTo(xo - side * 3, yo - 1); ctx.quadraticCurveTo(xo + side * 4, yo - 6, xo + side * 7, yo - 13);
+      ctx.moveTo(xo - side * 11, yo - 4); ctx.quadraticCurveTo(xo - side * 6, yo - 10, xo - side * 4, yo - 16);
+      ctx.moveTo(xo - side * 19, yo - 6); ctx.quadraticCurveTo(xo - side * 16, yo - 11, xo - side * 15, yo - 16);
       ctx.stroke();
     }
     ctx.restore();
   }
+}
+
+// a brow as a tapered shape along a curve: full at the inner end, fine at the tail
+function browPath(ctx, x0, y0, cx, cy, x1, y1, wd) {
+  const N = 14, top = [], bot = [];
+  for (let k = 0; k <= N; k++) {
+    const t = k / N, u = 1 - t;
+    const x = u * u * x0 + 2 * u * t * cx + t * t * x1, y = u * u * y0 + 2 * u * t * cy + t * t * y1;
+    const dx = 2 * u * (cx - x0) + 2 * t * (x1 - cx), dy = 2 * u * (cy - y0) + 2 * t * (y1 - cy), L = Math.hypot(dx, dy) || 1;
+    const h = (wd / 2) * (t < 0.22 ? 0.78 + t : 1 - 0.74 * Math.pow((t - 0.22) / 0.78, 1.4));
+    top.push([x - (dy / L) * h, y + (dx / L) * h]); bot.push([x + (dy / L) * h, y - (dx / L) * h]);
+  }
+  ctx.beginPath(); ctx.moveTo(top[0][0], top[0][1]);
+  for (const q of top) ctx.lineTo(q[0], q[1]);
+  for (let k = N; k >= 0; k--) ctx.lineTo(bot[k][0], bot[k][1]);
+  ctx.closePath();
 }
 
 function drawBrows(ctx, s) {
@@ -407,12 +457,20 @@ function drawBrows(ctx, s) {
     const yIn = lerp(lerp(-36, -44, sad), -26, b) + (angry ? 4 + 8 * b : 0) + 14 * mad, yOut = lerp(-32, -31, b) - (angry ? 5 : 0) - 8 * mad;
     const xIn = side * 28, xOut = side * 98;
     ctx.globalAlpha = lerp(0.35, 1, b);
-    ctx.lineWidth = lerp(4.5, 13, b) * wk + s.uni * 5;
-    ctx.beginPath(); ctx.moveTo(xIn, yIn);
-    ctx.quadraticCurveTo(side * 64, Math.min(yIn, yOut) - lerp(9, 5, b), xOut, yOut);
+    const wd = lerp(5, 14.5, b) * wk + s.uni * 5, ccx = side * 64, ccy = Math.min(yIn, yOut) - lerp(9, 5, b);
+    browPath(ctx, xIn, yIn, ccx, ccy, xOut, yOut, wd);
+    ctx.fillStyle = col; ctx.fill();
+    // fine hairs slanting out along it
+    ctx.globalAlpha *= 0.55; ctx.lineWidth = 1.3; ctx.strokeStyle = mixHex(col, '#ffffff', 0.32);
+    ctx.beginPath();
+    for (let k = 1; k < 8; k++) {
+      const t = k / 8.5, u = 1 - t, x = u * u * xIn + 2 * u * t * ccx + t * t * xOut, y = u * u * yIn + 2 * u * t * ccy + t * t * yOut;
+      ctx.moveTo(x - side * 3, y + wd * 0.22); ctx.lineTo(x + side * 4, y - wd * 0.28);
+    }
     ctx.stroke();
+    ctx.strokeStyle = col;
     if (kind === 'bushy' && b > 0.3) { // wispy ends sticking up
-      ctx.lineWidth = 4;
+      ctx.globalAlpha = 1; ctx.lineWidth = 3;
       ctx.beginPath();
       for (let k = 0; k < 5; k++) { const x = side * (34 + k * 15), y = lerp(yIn, yOut, (k + 0.5) / 5) - 10; ctx.moveTo(x, y + 6); ctx.lineTo(x + side * 7, y - 6); }
       ctx.stroke();
@@ -443,8 +501,8 @@ function drawBrows(ctx, s) {
 
 const GRIN = new Path2D('M -38 110 Q 0 122 38 110 Q 32 146 0 148 Q -32 146 -38 110 Z');
 function drawMouth(ctx, s, time) {
-  const m = s.moodV, y = 120, paint = s.who.lip, lip = paint || s.who.skin.lip;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = INK; ctx.lineWidth = LW;
+  const m = s.moodV, y = 120, paint = s.who.lip, lip = paint || s.who.skin.lip, T = toneOf(s.who.skin);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = T.mouth; ctx.lineWidth = 3.6;
   const kind = s.mouth;
   if (kind === 'grit') { // clenched teeth
     const t = s.teeth, p = new Path2D(); p.roundRect(-33, 107, 66, 24, 10);
@@ -453,7 +511,7 @@ function drawMouth(ctx, s, time) {
     ctx.beginPath(); ctx.moveTo(-31, 119); ctx.lineTo(31, 119);
     for (const x of [-17, -6, 6, 17]) { ctx.moveTo(x, 109); ctx.lineTo(x, 129); }
     ctx.stroke();
-    ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke(p);
+    ctx.lineWidth = 3.4; ctx.strokeStyle = T.mouth; ctx.stroke(p);
     return;
   }
   if (kind === 'sob') { // a wobbling, wailing open frown
@@ -479,7 +537,8 @@ function drawMouth(ctx, s, time) {
     ctx.beginPath(); for (const x of [-22, -8, 8, 22]) { ctx.moveTo(x, 104); ctx.lineTo(x, 125 - Math.abs(x) * 0.15); } ctx.stroke();
     ell(ctx, 0, 146, 18, 10); ctx.fillStyle = '#ff8fa8'; ctx.fill();
     ctx.restore();
-    ctx.strokeStyle = INK; ctx.stroke(p);
+    soft(ctx, 0, 152, 24, 7, lip, paint ? 0.7 : 0.45); // the lower lip
+    ctx.strokeStyle = T.mouth; ctx.lineWidth = 3.4; ctx.stroke(p);
     if (over > 0.02) { // dazzling: a blue halo and twinkles
       ctx.save();
       ctx.globalAlpha = 0.45 * over; ell(ctx, 0, 116, 56 + 20 * over, 26 + 10 * over); ctx.fillStyle = '#bfe9ff'; ctx.fill();
@@ -508,14 +567,15 @@ function drawMouth(ctx, s, time) {
     }
     mid = (ye + yc) / 2;
   }
-  // a soft lower lip under the line
+  // lips: a full lower lip under the line and a thin upper lip with a cupid's bow over it
+  const lw2 = paint ? 21 : 18;
   ctx.save();
-  ctx.globalAlpha = paint ? 0.92 : 0.55; ctx.fillStyle = lip;
-  const lp = new Path2D(); lp.ellipse(0, mid + 9, paint ? 20 : 17, paint ? 8 : 6, 0, 0, TAU); ctx.fill(lp);
-  if (paint) { // lipstick: an upper lip too, and a little gloss
-    const up = new Path2D(); up.ellipse(0, mid - 4, 19, 5, 0, 0, TAU); ctx.fill(up);
-    ctx.globalAlpha = 0.6; ctx.fillStyle = '#fff'; const g = new Path2D(); g.ellipse(-7, mid + 7, 5, 2.2, -0.2, 0, TAU); ctx.fill(g);
-  }
+  ctx.globalAlpha = paint ? 0.95 : 0.72; ctx.fillStyle = lip;
+  const lp = new Path2D(); lp.ellipse(0, mid + 8, lw2, paint ? 8.5 : 6.5, 0, 0, TAU); ctx.fill(lp);
+  ctx.globalAlpha = paint ? 0.9 : 0.5; ctx.fillStyle = paint ? lip : T.lipDeep;
+  ctx.fill(new Path2D(`M ${-lw2 + 3} ${mid} Q -8 ${mid - 9} 0 ${mid - 5} Q 8 ${mid - 9} ${lw2 - 3} ${mid} Q 0 ${mid + 2} ${-lw2 + 3} ${mid} Z`));
+  ctx.globalAlpha = paint ? 0.7 : 0.4; ctx.fillStyle = '#fff';
+  ctx.fill(new Path2D(`M -12 ${mid + 6} Q -6 ${mid + 3.5} 0 ${mid + 5.5} Q -6 ${mid + 8} -12 ${mid + 6} Z`)); // gloss
   ctx.restore();
   ctx.stroke();
 }
@@ -524,21 +584,31 @@ function drawMouth(ctx, s, time) {
 // k: 0 big and bumpy (before a nose job), 1 the patient's own, past 1 shrunk too far
 function drawNose(ctx, kind, k = 1, sk = null) {
   const big = smooth(clamp01(1 - k)), tiny = clamp01((k - 1) / 0.3);
-  const sz = 1 + 0.5 * big - 0.42 * tiny;
+  const sz = 1 + 0.5 * big - 0.42 * tiny, T = sk ? toneOf(sk) : null;
   ctx.save();
   if (sz !== 1) { ctx.translate(0, 40); ctx.scale(sz, sz); ctx.translate(0, -40); }
-  ctx.lineWidth = 5; ctx.strokeStyle = INK; ctx.globalAlpha = 0.75;
+  if (sk) { // shading: the shadow side of the bridge, the shadow under the tip, a lit tip
+    soft(ctx, 10, 44, 9, 28, sk.deep, 0.3);
+    soft(ctx, 2, 82, 22, 7, sk.deep, 0.32);
+    soft(ctx, -3, 64, 10, 8, '#ffffff', 0.26);
+  }
+  ctx.lineWidth = 3; ctx.strokeStyle = T ? T.line : INK; ctx.globalAlpha = 0.85;
   ctx.beginPath();
   if (kind === 'button') {
-    ctx.moveTo(-12, 62); ctx.quadraticCurveTo(-16, 80, 0, 80); ctx.quadraticCurveTo(16, 80, 12, 62); ctx.stroke();
+    ctx.moveTo(-12, 64); ctx.quadraticCurveTo(-17, 79, -6, 80); ctx.moveTo(12, 64); ctx.quadraticCurveTo(17, 79, 6, 80); ctx.stroke();
+    nostrils(ctx, T, 6, 77, 3.4);
   } else if (kind === 'wide') {
-    ctx.moveTo(-4, 20); ctx.bezierCurveTo(-6, 40, -12, 52, -22, 62); ctx.quadraticCurveTo(-36, 78, -16, 82); ctx.quadraticCurveTo(0, 88, 16, 82); ctx.quadraticCurveTo(36, 78, 22, 62);
+    ctx.moveTo(-6, 30); ctx.bezierCurveTo(-8, 44, -12, 54, -20, 62); ctx.quadraticCurveTo(-34, 77, -17, 81);
+    ctx.moveTo(20, 62); ctx.quadraticCurveTo(34, 77, 17, 81);
     ctx.stroke();
+    nostrils(ctx, T, 10, 81, 4);
   } else {
     const t = kind === 'long' ? -14 : 0;
-    ctx.moveTo(-4, 16 + t); ctx.bezierCurveTo(-8, 38 + t * 0.5, -20, 56, -16, 72 + (t ? 6 : 0)); ctx.quadraticCurveTo(-4, 82 + (t ? 6 : 0), 8, 78 + (t ? 6 : 0)); ctx.stroke();
-    ctx.globalAlpha = 0.55; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(16, 70 + (t ? 6 : 0)); ctx.quadraticCurveTo(23, 76 + (t ? 6 : 0), 14, 81 + (t ? 6 : 0)); ctx.stroke();
+    const d = t ? 6 : 0;
+    ctx.moveTo(-6, 34 + t * 0.5); ctx.bezierCurveTo(-9, 46 + t * 0.4, -20, 58, -16, 72 + d); ctx.quadraticCurveTo(-12, 79 + d, -5, 80 + d); ctx.stroke();
+    ctx.globalAlpha = 0.6; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(16, 69 + d); ctx.quadraticCurveTo(23, 76 + d, 13, 81 + d); ctx.stroke();
+    nostrils(ctx, T, 7, 79 + d, 3.4);
   }
   if (big > 0.02 && sk) drawBigNose(ctx, sk, big);
   if (tiny > 0.02) { // upturned piggy nostrils
@@ -547,12 +617,18 @@ function drawNose(ctx, kind, k = 1, sk = null) {
   }
   ctx.restore();
 }
+// two small nostrils either side of x = 0
+function nostrils(ctx, T, dx, y, r) {
+  ctx.save(); ctx.globalAlpha = 0.6; ctx.fillStyle = T ? T.ink : INK;
+  for (const side of [-1, 1]) { ell(ctx, side * dx, y, r, r * 0.6, side * 0.35); ctx.fill(); }
+  ctx.restore();
+}
 // the big, bumpy, red-tipped nose a patient comes in with for a nose job; it fades into
 // their own nose as the job goes on
 function drawBigNose(ctx, sk, a) {
   ctx.save();
   ctx.globalAlpha = Math.min(1, a * 1.4);
-  ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = INK;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 3.4; ctx.strokeStyle = toneOf(sk).ink;
   // bridge, with a bump on it
   const bridge = new Path2D('M -6 18 C -8 25 -19 30 -17 39 C -15 45 -17 50 -16 54 L 16 54 C 15 44 11 30 6 18 Z');
   ctx.fillStyle = sk.base; ctx.fill(bridge);
@@ -585,13 +661,13 @@ function drawGlasses(ctx, kind, e) {
     const x = side * EYE.x, p = new Path2D();
     if (kind === 'round') p.ellipse(x, y, R, R * 0.94, 0, 0, TAU); else p.roundRect(x - R, y - R * 0.78, R * 2, R * 1.56, 12);
     ctx.fillStyle = 'rgba(220,240,255,0.2)'; ctx.fill(p);
-    ctx.lineWidth = kind === 'round' ? 6 : 8; ctx.strokeStyle = INK; ctx.stroke(p);
+    ctx.lineWidth = kind === 'round' ? 4 : 5.5; ctx.strokeStyle = INK; ctx.stroke(p);
     ctx.beginPath(); ctx.moveTo(side * (EYE.x + R - 2), y - 4); ctx.lineTo(side * (EYE.x + R + 14), y - 9); ctx.stroke();
     ctx.globalAlpha = 0.75; ctx.lineWidth = 4; ctx.strokeStyle = '#ffffff';
     ctx.beginPath(); ctx.moveTo(x - R * 0.55, y - R * 0.1); ctx.lineTo(x - R * 0.2, y - R * 0.5); ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  ctx.lineWidth = kind === 'round' ? 6 : 8; ctx.strokeStyle = INK;
+  ctx.lineWidth = kind === 'round' ? 4 : 5.5; ctx.strokeStyle = INK;
   ctx.beginPath(); ctx.moveTo(-(EYE.x - R), y - 2); ctx.quadraticCurveTo(0, y - 14, EYE.x - R, y - 2); ctx.stroke();
 }
 function silverDot(ctx, x, y, r) { ell(ctx, x, y, r, r); ctx.fillStyle = '#dfe3ee'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = INK; ctx.stroke(); }
@@ -603,12 +679,15 @@ function drawPiercings(ctx) {
 }
 function drawMustache(ctx, w) {
   const p = new Path2D('M 0 96 C -18 86 -46 88 -60 108 C -46 104 -30 112 -16 110 C -8 109 -2 106 0 104 C 2 106 8 109 16 110 C 30 112 46 104 60 108 C 46 88 18 86 0 96 Z');
-  ctx.fillStyle = w.hair; ctx.fill(p); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.lineJoin = 'round'; ctx.stroke(p);
-  ctx.lineWidth = 3; ctx.strokeStyle = w.hairHi;
-  ctx.beginPath(); ctx.moveTo(-40, 96); ctx.quadraticCurveTo(-24, 92, -10, 98); ctx.moveTo(14, 98); ctx.quadraticCurveTo(28, 93, 40, 97); ctx.stroke();
+  ctx.fillStyle = w.hair; ctx.fill(p); ctx.lineWidth = 2.8; ctx.strokeStyle = mixHex(w.hair, '#2a1626', 0.55); ctx.lineJoin = 'round'; ctx.stroke(p);
+  // combed hairs
+  ctx.lineWidth = 1.6; ctx.strokeStyle = w.hairHi; ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  for (const side of [-1, 1]) for (let k = 0; k < 5; k++) { const x = side * (10 + k * 9); ctx.moveTo(x, 97 + k * 0.6); ctx.quadraticCurveTo(x + side * 6, 100 + k, x + side * 8, 106 + k); }
+  ctx.stroke(); ctx.globalAlpha = 1;
 }
-function drawWrinkles(ctx) {
-  ctx.globalAlpha = 0.3; ctx.strokeStyle = INK; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+function drawWrinkles(ctx, T) {
+  ctx.globalAlpha = 0.55; ctx.strokeStyle = T.line; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(-40, -94); ctx.quadraticCurveTo(-4, -102, 32, -96);
   ctx.moveTo(-32, -112); ctx.quadraticCurveTo(0, -118, 28, -113);
@@ -738,27 +817,46 @@ function drawHead(ctx, s, time, dirtImg) {
   const j = s.jaw, chin = jawSegs(j)[3][5];
   const hp = headPath(j);
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  // ears
+  const T = toneOf(sk);
+  // ears: shaded in their bowl, warm in the middle, with the fold of the rim
   for (const side of [-1, 1]) {
     ell(ctx, side * 150, 36, 20, 32); ctx.fillStyle = sk.base; ctx.fill();
-    ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke();
-    ctx.lineWidth = 3.5; ctx.beginPath(); ctx.arc(side * 152, 38, 11, side > 0 ? -1.3 : Math.PI - 1.8, side > 0 ? 1.8 : Math.PI + 1.3); ctx.stroke();
+    ctx.save(); ctx.clip();
+    soft(ctx, side * 160, 44, 16, 30, sk.deep, 0.55);
+    soft(ctx, side * 147, 30, 9, 15, T.warm, 0.5);
+    ctx.restore();
+    ell(ctx, side * 150, 36, 20, 32); ctx.lineWidth = OL; ctx.strokeStyle = T.ink; ctx.stroke();
+    ctx.lineWidth = 2.6; ctx.strokeStyle = T.line; ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.arc(side * 152, 38, 11, side > 0 ? -1.3 : Math.PI - 1.8, side > 0 ? 1.8 : Math.PI + 1.3); ctx.stroke();
+    ctx.globalAlpha = 1;
     if (w.earring) drawEarring(ctx, w.earring, side);
   }
-  // face
+  // face: lit from the upper left, deepening toward the edges
   ctx.fillStyle = sk.shade; ctx.fill(hp);
   ctx.save(); ctx.clip(hp);
-  ctx.save(); ctx.translate(-15, -12); ctx.fillStyle = sk.base; ctx.fill(hp); ctx.restore();
-  ell(ctx, -58, -96, 40, 16, -0.4); ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fill();
-  ell(ctx, -4, 60, 5, 9); ctx.fill();
-  if (j > 0.05) {
-    ctx.fillStyle = sk.deep; ctx.globalAlpha = 0.22 * clamp01(j);
-    for (const side of [-1, 1]) { ell(ctx, side * 112, 108, 28, 11, side * 0.55); ctx.fill(); }
-    ctx.globalAlpha = 1;
+  const lit = ctx.createRadialGradient(-40, -70, 10, -20, -30, 250);
+  lit.addColorStop(0, T.light); lit.addColorStop(0.55, sk.base); lit.addColorStop(1, mixHex(sk.base, sk.shade, 0.6));
+  ctx.save(); ctx.translate(-13, -11); ctx.fillStyle = lit; ctx.fill(hp); ctx.restore();
+  // soft modelling: temples, eye sockets, under the cheekbones; light on the forehead and chin
+  for (const side of [-1, 1]) {
+    soft(ctx, side * 142, -40, 30, 92, sk.deep, side > 0 ? 0.3 : 0.2);
+    soft(ctx, side * 56, -6, 46, 20, sk.deep, 0.16);
+    soft(ctx, side * 124, 78, 26, 40, sk.deep, 0.11, side * 0.3);
+  }
+  soft(ctx, -46, -118, 80, 42, '#ffffff', 0.2, -0.3);
+  soft(ctx, -88, 46, 26, 15, '#ffffff', 0.1);
+  soft(ctx, 0, 158, 26, 9, sk.deep, 0.26);
+  soft(ctx, 0, chin - 22, 26, 10, '#ffffff', 0.12);
+  { // the jawline turns away from the light: shade along the edge, fading in toward the chin;
+    // a sculpted jaw gets a deeper contour
+    const g = ctx.createLinearGradient(0, 20, 0, 160);
+    g.addColorStop(0, rgba(sk.deep, 0)); g.addColorStop(1, rgba(sk.deep, 0.05 + 0.08 * clamp01(j)));
+    ctx.strokeStyle = g;
+    for (const lw of [48, 30, 16]) { ctx.lineWidth = lw; ctx.stroke(hp); }
   }
   if (w.freckles) {
-    ctx.fillStyle = sk.freckle; ctx.globalAlpha = 0.75;
-    for (const [fx, fy] of FRECKLES) for (const side of [-1, 1]) { ell(ctx, fx * side, fy, 3, 3); ctx.fill(); }
+    ctx.fillStyle = sk.freckle; ctx.globalAlpha = 0.65;
+    for (const [fx, fy] of FRECKLES) for (const side of [-1, 1]) { ell(ctx, fx * side, fy, 2.6, 2.4); ctx.fill(); }
     ctx.globalAlpha = 1;
   }
   drawSpots(ctx, s);
@@ -769,9 +867,9 @@ function drawHead(ctx, s, time, dirtImg) {
     ctx.fillStyle = g; ctx.fill(hp);
   }
   ctx.restore();
-  ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke(hp);
+  ctx.lineWidth = OL; ctx.strokeStyle = T.ink; ctx.stroke(hp);
   if (j > 0.6 && s.nick < 0.05) {
-    ctx.globalAlpha = 0.45 * clamp01((j - 0.6) * 3); ctx.lineWidth = 4;
+    ctx.strokeStyle = T.line; ctx.globalAlpha = 0.5 * clamp01((j - 0.6) * 3); ctx.lineWidth = 2.6;
     ctx.beginPath(); ctx.moveTo(-6, chin - 14); ctx.quadraticCurveTo(0, chin - 9, 6, chin - 14); ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -784,7 +882,7 @@ function drawHead(ctx, s, time, dirtImg) {
     ctx.restore();
   }
   // a patient here for the iron has their wrinkles drawn as lines to iron instead
-  if (s.wrk.length) drawWrinkleLines(ctx, s); else if (w.wrinkles) drawWrinkles(ctx);
+  if (s.wrk.length) drawWrinkleLines(ctx, s); else if (w.wrinkles) drawWrinkles(ctx, T);
   drawPimples(ctx, s, time);
   drawScars(ctx, s, time);
   drawCircles(ctx, s);
@@ -799,8 +897,7 @@ function drawHead(ctx, s, time, dirtImg) {
   drawMouth(ctx, s, time);
   if (w.mustache) drawMustache(ctx, w);
   const blush = (w.blush || 0.16) + clamp01(s.moodV) * 0.4 + s.flush * 0.45;
-  ctx.fillStyle = `rgba(255,105,125,${Math.min(0.7, blush)})`;
-  for (const side of [-1, 1]) { ell(ctx, side * 96, 66, w.cheeks ? 30 : 24, w.cheeks ? 17 : 13); ctx.fill(); }
+  for (const side of [-1, 1]) soft(ctx, side * 96, 68, w.cheeks ? 38 : 32, w.cheeks ? 22 : 18, '#ff6b81', Math.min(0.85, blush * 1.35));
   if (w.cheeks) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; for (const side of [-1, 1]) { ell(ctx, side * 90 - 6, 56, 9, 5, -0.3); ctx.fill(); } }
   drawHair(ctx, s);
   drawPierced(ctx, s);

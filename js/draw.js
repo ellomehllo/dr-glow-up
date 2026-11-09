@@ -110,3 +110,32 @@ export function glowSprite(size = 64, color = '255,255,255') {
 // the outline colour used for every drawn shape
 export const INK = '#3a2747';
 export function ell(ctx, x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, TAU); }
+
+// ---------- colour and soft shading ----------
+const rgbCache = new Map();
+// [r, g, b] of '#rrggbb' or 'rgb(r,g,b)'
+export function rgbOf(c) {
+  let v = rgbCache.get(c);
+  if (v) return v;
+  if (c[0] === '#') { const n = parseInt(c.slice(1), 16); v = [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  else v = (c.match(/\d+/g) || [0, 0, 0]).slice(0, 3).map(Number);
+  if (rgbCache.size > 400) rgbCache.clear();
+  rgbCache.set(c, v);
+  return v;
+}
+// mix two colours into a '#rrggbb'
+export function mixHex(a, b, t) {
+  const p = rgbOf(a), q = rgbOf(b);
+  return '#' + [0, 1, 2].map((i) => Math.round(p[i] + (q[i] - p[i]) * t).toString(16).padStart(2, '0')).join('');
+}
+export const rgba = (c, a) => { const [r, g, b] = rgbOf(c); return `rgba(${r},${g},${b},${a})`; };
+// a soft-edged oval of colour fading out to nothing: shading and highlights without lines
+export function soft(ctx, x, y, rx, ry, col, a, rot = 0) {
+  if (a <= 0.003) return;
+  const [r, g, b] = rgbOf(col);
+  ctx.save(); ctx.translate(x, y); if (rot) ctx.rotate(rot); ctx.scale(rx, ry);
+  const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  gr.addColorStop(0, `rgba(${r},${g},${b},${a})`); gr.addColorStop(0.55, `rgba(${r},${g},${b},${a * 0.55})`); gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill();
+  ctx.restore();
+}

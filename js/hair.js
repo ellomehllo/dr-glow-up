@@ -2,10 +2,14 @@
 // the crown, 5 along the fringe), a cap over the scalp and, for long styles, hair behind
 // the head. Nothing hangs below the hairline, so pimples and scars stay in the clear.
 // The cap always carries a light sheen so dark hair reads as hair on dark skin.
-import { TAU, clamp01, easeOutBack, INK, ell } from './draw.js';
+// Hair is outlined in its own darker shade, shaded from the upper left, and drawn with
+// fine strands, rather than heavy ink.
+import { TAU, clamp01, easeOutBack, ell, soft } from './draw.js';
 import { mix } from './people.js';
+import { hairTone } from './tones.js';
 
-const LW = 6;
+const LW = 3.6;
+const tone = (w) => hairTone(w.hair, w.hairHi);
 
 function makeCurls() {
   const out = [];
@@ -44,8 +48,9 @@ const STUBBLE = (() => {
 const SIDES = [0, 1, 8, 9];
 export const tuftKept = (style, i) => style !== 'bald' || SIDES.includes(i);
 
-function fillStroke(ctx, w, lw = 5) { ctx.fillStyle = w.hair; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = INK; ctx.stroke(); }
-function hiStroke(ctx, w, lw = 3) { ctx.lineWidth = lw; ctx.strokeStyle = w.hairHi; ctx.stroke(); }
+function fillStroke(ctx, w, lw = 3) { ctx.fillStyle = w.hair; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = tone(w).ink; ctx.stroke(); }
+function hiStroke(ctx, w, lw = 2) { ctx.save(); ctx.globalAlpha *= 0.85; ctx.lineWidth = lw; ctx.strokeStyle = w.hairHi; ctx.stroke(); ctx.restore(); }
+function darkStroke(ctx, w, lw = 1.8, a = 0.55) { ctx.save(); ctx.globalAlpha *= a; ctx.lineWidth = lw; ctx.strokeStyle = tone(w).dark; ctx.stroke(); ctx.restore(); }
 function dots(ctx, pts, r, col, alpha) {
   ctx.fillStyle = col; ctx.globalAlpha *= alpha;
   ctx.beginPath(); for (const [x, y] of pts) { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); } ctx.fill();
@@ -95,7 +100,19 @@ function smoothHi(ctx, w, c, r, push, i) {
   else if (st === 'slick') { if (fringe) ctx.arc(x - 2, y - 14 * k, r * 0.55, 3.6, 5.4); else return; }
   else if (st === 'wavy' || st === 'bob') ctx.ellipse(x - dx * 4, y - dy * 4, r * 0.6, r * 0.33, a + Math.PI / 2, Math.PI * 1.1, Math.PI * 1.7);
   else return;
-  hiStroke(ctx, w, 3);
+  hiStroke(ctx, w, 2.2);
+}
+// fine strands across a sleek lock, following the way it falls
+function smoothStrands(ctx, w, c, r, push, i) {
+  const { dx, dy, nx, ny, x, y } = tuftGeom(c, r, push);
+  if (w.style === 'straight' && i >= 10) return;
+  ctx.beginPath();
+  for (const f of [-0.45, 0, 0.45]) {
+    const ox = x + nx * r * f, oy = y + ny * r * f;
+    ctx.moveTo(ox - dx * r * 0.5, oy - dy * r * 0.5);
+    ctx.quadraticCurveTo(ox + nx * r * 0.18, oy + ny * r * 0.18, ox + dx * r * 0.45, oy + dy * r * 0.45);
+  }
+  darkStroke(ctx, w, 1.5, 0.4);
 }
 
 // one tuft; its shape depends on the hairstyle. k is how far it has grown in (0..~1.1)
@@ -107,17 +124,23 @@ function drawTuft(ctx, w, c, r, push, i) {
     case 'afro': {
       const R = r * 1.22, X = x + dx * r * 0.32, Y = y + dy * r * 0.32;
       ell(ctx, X, Y, R, R); fillStroke(ctx, w);
+      // tight coils
+      ctx.beginPath();
+      for (const [u, v, q] of [[-0.35, 0.1, 0.22], [0.3, -0.25, 0.2], [0.25, 0.4, 0.18], [-0.1, -0.5, 0.16]]) { const px = X + u * R, py = Y + v * R; ctx.moveTo(px + q * R, py); ctx.arc(px, py, q * R, 0, 4.4); }
+      darkStroke(ctx, w, 1.6, 0.5);
       ctx.beginPath(); ctx.arc(X - R * 0.2, Y - R * 0.2, R * 0.45, 3.4, 4.6); hiStroke(ctx, w);
       return;
     }
     case 'spiky': {
       spike(ctx, x, y, a, r * 1.55, r * 0.78); fillStroke(ctx, w);
+      ctx.beginPath(); ctx.moveTo(x - nx * 6, y - ny * 6); ctx.lineTo(x + dx * r * 0.85 - nx * 2, y + dy * r * 0.85 - ny * 2); darkStroke(ctx, w);
       ctx.beginPath(); ctx.moveTo(x + dx * 4, y + dy * 4); ctx.lineTo(x + dx * r * 0.93 + nx * 3, y + dy * r * 0.93 + ny * 3); hiStroke(ctx, w);
       return;
     }
     case 'messy': {
       const aa = a + Math.sin(c.rot * 3.1) * 0.55;
       spike(ctx, x, y, aa, r * 1.35, r * 0.74, Math.sin(c.rot * 5.3) * 0.5); fillStroke(ctx, w);
+      ctx.beginPath(); ctx.moveTo(x - nx * 7, y - ny * 7); ctx.lineTo(x + Math.cos(aa) * r * 0.7 - nx * 3, y + Math.sin(aa) * r * 0.7 - ny * 3); darkStroke(ctx, w);
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(aa) * r * 0.8, y + Math.sin(aa) * r * 0.8); hiStroke(ctx, w);
       return;
     }
@@ -125,7 +148,8 @@ function drawTuft(ctx, w, c, r, push, i) {
       if (Math.abs(c.x) > 56) return; // shaved
       const aa = -Math.PI / 2 + (a + Math.PI / 2) * 0.45;
       spike(ctx, x, y, aa, r * 3.1, r * 0.72); fillStroke(ctx, w);
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(aa) * r * 1.9, y + Math.sin(aa) * r * 1.9); hiStroke(ctx, w, 4);
+      ctx.beginPath(); ctx.moveTo(x - nx * 8, y - ny * 8); ctx.lineTo(x + Math.cos(aa) * r * 2.3 - nx * 3, y + Math.sin(aa) * r * 2.3 - ny * 3); darkStroke(ctx, w, 2);
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(aa) * r * 1.9, y + Math.sin(aa) * r * 1.9); hiStroke(ctx, w, 2.6);
       return;
     }
     case 'buzz': {
@@ -136,21 +160,28 @@ function drawTuft(ctx, w, c, r, push, i) {
       const R = r * (fringe ? 0.62 : 0.72);
       ell(ctx, x, y, R, R); fillStroke(ctx, w);
       ctx.beginPath(); ctx.moveTo(x - nx * R * 0.7, y - ny * R * 0.7); ctx.quadraticCurveTo(x - dx * R * 0.2, y - dy * R * 0.2, x + nx * R * 0.7, y + ny * R * 0.7); hiStroke(ctx, w);
+      ctx.beginPath(); ctx.moveTo(x - nx * R * 0.6 + dx * R * 0.35, y - ny * R * 0.6 + dy * R * 0.35); ctx.quadraticCurveTo(x + dx * R * 0.15, y + dy * R * 0.15, x + nx * R * 0.6 + dx * R * 0.35, y + ny * R * 0.6 + dy * R * 0.35); darkStroke(ctx, w);
       return;
     }
     case 'bald': { // soft, fluffy puffs
       const P = [[x + nx * r * 0.45, y + ny * r * 0.45, r * 0.6], [x - nx * r * 0.45, y - ny * r * 0.45, r * 0.6], [x + dx * r * 0.28, y + dy * r * 0.28, r * 0.68]];
       ctx.beginPath(); for (const [px, py, pr] of P) { ctx.moveTo(px + pr, py); ctx.arc(px, py, pr, 0, TAU); }
-      ctx.lineWidth = 10; ctx.strokeStyle = INK; ctx.stroke();
+      ctx.lineWidth = 6.5; ctx.strokeStyle = tone(w).ink; ctx.stroke();
       ctx.fillStyle = w.hair; ctx.fill();
       ctx.beginPath(); ctx.arc(x - dx * 2, y - dy * 2, r * 0.4, a + 2.4, a + 3.6); hiStroke(ctx, w);
+      ctx.beginPath(); ctx.arc(x + dx * 4, y + dy * 4, r * 0.32, a - 0.4, a + 0.9); darkStroke(ctx, w, 1.5, 0.45);
       return;
     }
-    default: { // curly
+    default: { // curly: a round curl, lit on top, with the twist of the curl inside
+      const T = tone(w);
       ell(ctx, x, y, r, r); ctx.fillStyle = w.hair; ctx.fill();
-      ell(ctx, x - r * 0.18, y - r * 0.2, r * 0.5, r * 0.42); ctx.fillStyle = w.hairHi; ctx.globalAlpha *= 0.55; ctx.fill(); ctx.globalAlpha /= 0.55;
-      ell(ctx, x, y, r, r); ctx.lineWidth = 5; ctx.strokeStyle = INK; ctx.stroke();
-      ctx.lineWidth = 3.5; ctx.beginPath(); ctx.arc(x + r * 0.06, y + r * 0.04, r * 0.5, c.rot, c.rot + 4.3); ctx.stroke();
+      ctx.save(); ctx.clip();
+      soft(ctx, x + r * 0.35, y + r * 0.4, r * 0.9, r * 0.8, T.dark, 0.55);
+      soft(ctx, x - r * 0.25, y - r * 0.3, r * 0.6, r * 0.45, w.hairHi, 0.6);
+      ctx.restore();
+      ell(ctx, x, y, r, r); ctx.lineWidth = 3; ctx.strokeStyle = T.ink; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + r * 0.06, y + r * 0.04, r * 0.5, c.rot, c.rot + 4.3); darkStroke(ctx, w, 2.2, 0.7);
+      ctx.beginPath(); ctx.arc(x - r * 0.04, y - r * 0.06, r * 0.66, c.rot + 3.6, c.rot + 5); hiStroke(ctx, w, 1.6);
     }
   }
 }
@@ -169,28 +200,40 @@ export function drawBackHair(ctx, s) {
   else if (st === 'straight') p = BACK_STRAIGHT;
   else if (st === 'afro') { p = new Path2D(); p.ellipse(0, -70, 206, 190, 0, 0, TAU); }
   if (p) {
+    const T = tone(w);
     ctx.fillStyle = w.hair; ctx.fill(p);
-    ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke(p);
-    if (st === 'straight' || st === 'wavy') {
-      ctx.strokeStyle = w.hairHi; ctx.lineWidth = 4; ctx.globalAlpha = h * 0.7;
+    ctx.save(); ctx.clip(p);
+    for (const side of [-1, 1]) soft(ctx, side * 150, 120, 60, 200, T.dark, 0.5); // shade near the face
+    ctx.restore();
+    ctx.lineWidth = LW; ctx.strokeStyle = T.ink; ctx.stroke(p);
+    if (st === 'straight' || st === 'wavy' || st === 'bob') {
+      // strands falling down each side: a few dark, a few lit
+      const wav = st === 'wavy' ? 20 : 6, end = st === 'bob' ? 150 : 236;
       ctx.beginPath();
-      for (const side of [-1, 1]) { ctx.moveTo(side * 172, -20); ctx.quadraticCurveTo(side * (st === 'wavy' ? 192 : 180), 90, side * 174, 200); }
+      for (const side of [-1, 1]) for (const k of [0, 1, 2, 3]) {
+        const x = side * (164 + k * 7);
+        ctx.moveTo(x, -40 + k * 10); ctx.bezierCurveTo(x + side * wav, 40, x - side * wav, 140, x + side * 4, end - k * 14);
+      }
+      ctx.save(); ctx.globalAlpha = h * 0.45; ctx.lineWidth = 1.6; ctx.strokeStyle = T.dark; ctx.stroke(); ctx.restore();
+      ctx.strokeStyle = w.hairHi; ctx.lineWidth = 2.4; ctx.globalAlpha = h * 0.6;
+      ctx.beginPath();
+      for (const side of [-1, 1]) { ctx.moveTo(side * 172, -20); ctx.quadraticCurveTo(side * (st === 'wavy' ? 192 : 180), 90, side * 174, Math.min(200, end - 20)); }
       ctx.stroke();
     }
   } else if (st === 'locs') {
     for (const side of [-1, 1]) for (let j = 0; j < 5; j++) {
       const x = side * (142 + j * 13), y0 = -90 + j * 8, y1 = 150 + ((j * 37) % 5) * 14;
       ctx.beginPath(); ctx.moveTo(x, y0); ctx.quadraticCurveTo(x + side * 8, (y0 + y1) / 2, x + side * 3, y1);
-      ctx.lineWidth = 23; ctx.strokeStyle = INK; ctx.stroke();
+      ctx.lineWidth = 20; ctx.strokeStyle = tone(w).ink; ctx.stroke();
       ctx.lineWidth = 15; ctx.strokeStyle = w.hair; ctx.stroke();
-      ctx.lineWidth = 3; ctx.strokeStyle = w.hairHi;
+      ctx.lineWidth = 2; ctx.strokeStyle = w.hairHi;
       ctx.beginPath(); for (let y = y0 + 20; y < y1 - 6; y += 18) { ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y + 6); } ctx.stroke();
     }
   } else if (st === 'bald') {
     for (const side of [-1, 1]) {
       ctx.beginPath();
       for (const [x, y, r] of [[150, -40, 30], [160, 4, 28]]) { ctx.moveTo(side * x + r, y); ctx.arc(side * x, y, r, 0, TAU); }
-      ctx.lineWidth = 10; ctx.strokeStyle = INK; ctx.stroke();
+      ctx.lineWidth = 6.5; ctx.strokeStyle = tone(w).ink; ctx.stroke();
       ctx.fillStyle = w.hair; ctx.fill();
     }
   }
@@ -216,6 +259,10 @@ export function drawHair(ctx, s) {
       ctx.save(); ctx.clip(CAP); dots(ctx, STUBBLE, 1.8, '#2a1a20', 0.4); ctx.fillStyle = w.hair; ctx.fill(MOHAWK); ctx.restore();
     } else {
       ctx.globalAlpha = capA; ctx.fillStyle = w.hair; ctx.fill(CAP);
+      ctx.save(); ctx.clip(CAP);
+      soft(ctx, 90, -110, 110, 70, tone(w).dark, 0.45); // the far side in shadow
+      soft(ctx, -50, -170, 110, 50, tone(w).mid, 0.5, -0.25); // lit crown
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
     // sheen, so the hair reads as hair whatever the skin tone
@@ -228,10 +275,16 @@ export function drawHair(ctx, s) {
     } else if (st === 'buzz') {
       dots(ctx, STUBBLE, 2, w.hairHi, 0.7);
     } else if (st !== 'mohawk') {
-      ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(-118, -128); ctx.quadraticCurveTo(-70, -188, 10, -188); ctx.stroke();
-      ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(32, -186); ctx.quadraticCurveTo(72, -180, 98, -160); ctx.stroke();
+      // a sheen of fine strands sweeping over the crown
+      ctx.lineWidth = 2.6; ctx.beginPath();
+      for (const k of [0, 1, 2, 3]) { ctx.moveTo(-122 + k * 8, -126 - k * 4); ctx.quadraticCurveTo(-72 + k * 4, -192 + k * 7, 8 + k * 6, -190 + k * 8); }
+      ctx.stroke();
+      ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(32, -186); ctx.quadraticCurveTo(72, -180, 98, -160); ctx.moveTo(40, -176); ctx.quadraticCurveTo(76, -170, 100, -148); ctx.stroke();
+      ctx.globalAlpha = 0.3 * h; ctx.strokeStyle = tone(w).dark; ctx.lineWidth = 1.6; ctx.beginPath();
+      for (let x = -100; x <= 100; x += 34) { ctx.moveTo(x * 0.4, -200); ctx.quadraticCurveTo(x * 0.85, -170, x, -128 + Math.abs(x) * 0.2); }
+      ctx.stroke();
     }
-    if (st === 'neat' && h > 0.5) { ctx.globalAlpha = 0.6 * h; ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.beginPath(); ctx.moveTo(-58, -198); ctx.quadraticCurveTo(-62, -160, -70, -124); ctx.stroke(); }
+    if (st === 'neat' && h > 0.5) { ctx.globalAlpha = 0.6 * h; ctx.lineWidth = 2.6; ctx.strokeStyle = tone(w).ink; ctx.beginPath(); ctx.moveTo(-58, -198); ctx.quadraticCurveTo(-62, -160, -70, -124); ctx.stroke(); }
     ctx.restore();
     ctx.globalAlpha = 1;
     // thinning hair before treatment: a few strands over the see-through cap
@@ -242,14 +295,15 @@ export function drawHair(ctx, s) {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.globalAlpha = 0.5 + 0.5 * h; ctx.stroke(CAP); ctx.globalAlpha = 1;
+    ctx.lineWidth = LW; ctx.strokeStyle = tone(w).ink; ctx.globalAlpha = 0.5 + 0.5 * h; ctx.stroke(CAP); ctx.globalAlpha = 1;
   }
   // a bun on top, tied with a band, once the crown has grown in
   if (st === 'bun' && s.curls[4] >= 0) {
     const k = easeOutBack(clamp01(s.curls[4] / 0.32));
     ell(ctx, 0, -236 + 10 * (1 - k), 50 * k, 44 * k); fillStroke(ctx, w, LW);
     ctx.beginPath(); ctx.arc(-4, -240, 26 * k, 3.3, 5.6); hiStroke(ctx, w, 4);
-    ctx.beginPath(); ctx.roundRect(-30 * k, -204, 60 * k, 13, 6); ctx.fillStyle = '#ff6fae'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
+    ctx.beginPath(); ctx.arc(14, -228, 22 * k, 0.2, 1.4); darkStroke(ctx, w, 1.8, 0.5);
+    ctx.beginPath(); ctx.roundRect(-30 * k, -204, 60 * k, 13, 6); ctx.fillStyle = '#ff6fae'; ctx.fill(); ctx.lineWidth = 2.6; ctx.strokeStyle = tone(w).ink; ctx.stroke();
   }
   const grown = [];
   for (let i = 0; i < CURLS.length; i++) {
@@ -260,11 +314,12 @@ export function drawHair(ctx, s) {
   if (SMOOTH.has(st)) {
     // outlines only where they edge the hair, not across the scalp underneath
     ctx.save(); ctx.clip(OUTSIDE_CAP, 'evenodd');
-    ctx.lineJoin = 'round'; ctx.lineWidth = 11; ctx.strokeStyle = INK;
+    ctx.lineJoin = 'round'; ctx.lineWidth = 7; ctx.strokeStyle = tone(w).ink;
     for (const [i, r] of grown) { smoothShape(ctx, st, CURLS[i], r, push, i); ctx.stroke(); }
     ctx.restore();
     ctx.fillStyle = w.hair;
     for (const [i, r] of grown) { smoothShape(ctx, st, CURLS[i], r, push, i); ctx.fill(); }
+    for (const [i, r] of grown) smoothStrands(ctx, w, CURLS[i], r, push, i);
     for (const [i, r] of grown) smoothHi(ctx, w, CURLS[i], r, push, i);
   } else for (const [i, r] of grown) drawTuft(ctx, w, CURLS[i], r, push, i);
 }
