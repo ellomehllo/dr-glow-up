@@ -160,16 +160,23 @@ export class Game {
     // pimples: the ones they sat in the waiting room with first
     const had = from ? from.pimples : [];
     const pimples = has('pop') ? [...had, ...shuffle(PIMPLE_SPOTS.filter((p) => !had.includes(p)))].slice(0, L.pimples) : [];
-    const ex = rollExtras({ open: (id) => INTRO[id] <= level, must: L.extra, who, carry: from });
+    // the order fits the level's size (short at a chapter's start, longest on its boss):
+    // the treatments, the glow and anything new this level come first, then the rest only
+    // while there's room
+    const mid = L.tools.slice(1, -1);
+    const must = L.extra.length; // this level's new extra: always in
+    let room = L.size - mid.length - 1 - (L.style ? 1 : 0) - must;
     // only some come in muddy and need a wash (always on the first level, to learn it)
-    const muddy = from ? from.dirt > 0 : level === 0 || Math.random() < 0.3;
+    const muddy = level === 0 || (room > 0 && (from ? from.dirt > 0 : Math.random() < 0.3));
+    if (muddy && level !== 0) room--;
+    const ex = rollExtras({ open: (id) => INTRO[id] <= level, must: L.extra, who, carry: from, max: must + Math.max(0, room) });
+    room -= ex.extras.length - must;
     // a look they want: the style tool this level brings in, or now and then (always for a
     // boss) one already open; a waiting-room patient keeps the one they came with
     const open = STYLE_IDS.filter((id) => INTRO[id] <= level);
-    let wish = from && from.wish && INTRO[from.wish.id] <= level ? from.wish : null;
+    let wish = from && from.wish && INTRO[from.wish.id] <= level && room > 0 ? from.wish : null;
     if (L.style) wish = wish && wish.id === L.style ? wish : rollWish(L.style);
-    else if (!wish && open.length && (L.boss || Math.random() < 0.45)) wish = rollWish(open[(Math.random() * open.length) | 0]);
-    const mid = L.tools.slice(1, -1);
+    else if (!wish && room > 0 && open.length && (L.boss || Math.random() < 0.45)) wish = rollWish(open[(Math.random() * open.length) | 0]);
     return {
       level, who, pimples, ...ex, wish,
       tools: [...(muddy ? ['scrub'] : []), ...mid, ...ex.extras, ...(wish ? [wish.id] : []), L.tools[L.tools.length - 1]], // the glow stays last

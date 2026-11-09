@@ -123,7 +123,7 @@ export const INTRO = {
   teeth: 30, rasp: 34, // chapter 4
   iron: 40, // chapter 5
   tweeze: 2, tbrush: 3, drill: 6, pliers: 8, // extras, early in chapter 1
-  dye: 5, lips: 7, pierce: 10, blush: 12, gems: 15, glitter: 18, // style tools
+  dye: 5, lips: 7, pierce: 11, blush: 12, gems: 15, glitter: 18, // style tools
   shadow: 25, freckles: 33, lashes: 44, brows: 53, clips: 64, highlight: 75, shades: 86,
 };
 // the extra tools (extras.js): a patient brings their troubles on top of the level's own
@@ -155,7 +155,14 @@ export const STYLE_IDS = STYLES.map((t) => t.id);
 // every scored treatment in a fixed reference order; each level shuffles its own set
 // into the order the player has to follow (shown in the HUD, auto-played by Space)
 const SCORED = ['laser', 'pop', 'gold', 'circles', 'iron', 'nose', 'teeth', 'chisel', 'mew', 'rasp'];
-const PER_CHAPTER = [2, 2, 3, 3, 4, 4, 4, 5, 5, 5]; // scored treatments in a chapter's early levels
+// how long a patient's order may be, by level within the chapter (everything in it: the
+// wash, treatments, extras, a wish and the glow). Every chapter starts short again and
+// builds to its longest on its boss (level 10, 20, ...); a level that brings in something
+// new may go one over, so the new thing always gets its turn
+export const ORDER_SIZE = [2, 2, 3, 3, 4, 4, 5, 5, 6, 7];
+// of that, the room left for the patient's own extras, wish or a wash (the rest is the
+// level's treatments)
+const SPARE = [0, 0, 1, 1, 1, 1, 1, 2, 2, 2];
 
 function rng(seed) {
   return () => {
@@ -190,10 +197,15 @@ function makeLevel(n, prev) {
   const freshS = STYLE_IDS.filter((id) => INTRO[id] === n); // the patient always wishes for this one
   const recent = pool.filter((id) => n - INTRO[id] >= 1 && n - INTRO[id] <= 2);
   const mine = pool.filter((id) => Math.floor(INTRO[id] / CHAPTER_SIZE) === c);
-  // a new treatment's first level: only that one, so it can be learnt on its own
-  const set = new Set(fresh.length ? fresh : [...recent, ...(boss ? mine : [])]);
+  const size = ORDER_SIZE[k];
+  // a new treatment's first level: only that one, so it can be learnt on its own;
+  // otherwise as many as the order has room for (the glow, a new extra or wish and the
+  // spare room aside), the recent ones (and on a boss this chapter's) first
+  const count = Math.max(1, Math.min(pool.length, size - 1 - freshX.length - freshS.length - SPARE[k]));
+  const first = [...new Set([...recent, ...(boss ? mine : [])])];
+  for (let i = first.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [first[i], first[j]] = [first[j], first[i]]; }
+  const set = new Set(fresh.length ? fresh : first.slice(0, count));
   if (!fresh.length) {
-    const count = Math.min(pool.length, PER_CHAPTER[c] + (k >= 4 ? 1 : 0) + (boss ? 1 : 0));
     const rest = pool.filter((id) => !set.has(id));
     while (set.size < count && rest.length) {
       const w = rest.map((id) => (mine.includes(id) ? 3 : 1) * (id === 'pop' ? 1.5 : 1));
@@ -208,7 +220,7 @@ function makeLevel(n, prev) {
   const d = Math.max(0, Math.min(1, c * 0.1 + k * 0.012 + (boss ? 0.03 : 0) - (fresh.length ? 0.04 : 0)));
   const since = (id) => Math.max(0, n - INTRO[id]);
   return {
-    tools, chapter: c, boss, fresh: [...fresh, ...freshX, ...freshS], extra: freshX, style: freshS[0] || null,
+    tools, size, chapter: c, boss, fresh: [...fresh, ...freshX, ...freshS], extra: freshX, style: freshS[0] || null,
     pass: 50 + 3 * c + (boss ? 5 : 0), // aura needed to unlock the next level
     zone: round(lerp(1.6, 0.75, d), 100), speed: round(lerp(0.85, 1.42, d), 100), jitter: round(lerp(0, 0.07, d), 1000),
     dirt: round(lerp(0.45, 1, d), 100),

@@ -62,13 +62,14 @@ export function makeDent(d) {
 // what a new patient brings. open(id): the tool is unlocked at this level; must: tools
 // the level introduces (always brought); carry: a setup to keep the extras of (the
 // patient walked in from the waiting room with them).
-export function rollExtras({ open, must = [], who, carry = null }) {
+// max: room in the order for extras (the level's new one always comes)
+export function rollExtras({ open, must = [], who, carry = null, max = 2 }) {
   const want = new Set(must.filter(open));
   if (carry) {
-    for (const id of carry.extras || []) if (open(id)) want.add(id);
+    for (const id of carry.extras || []) if (open(id) && want.size < max) want.add(id);
   } else {
     for (const id of shuffle(EXTRAS.filter((id) => open(id) && !want.has(id)))) {
-      if (want.size >= 2) break;
+      if (want.size >= Math.min(2, max)) break;
       if (Math.random() < 0.42) want.add(id);
     }
   }
@@ -83,7 +84,8 @@ export function rollExtras({ open, must = [], who, carry = null }) {
       }
     }
     // a patient with piercings of their own wants them out
-    out.own = who && who.piercings ? OWN_PIERCINGS.map((p) => ({ ...p })) : [];
+    // (only when there's room in the order: otherwise they keep them in today)
+    out.own = who && who.piercings && (want.has('tweeze') || want.size < max) ? OWN_PIERCINGS.map((p) => ({ ...p })) : [];
     if (out.debris.length || out.worms.length || out.own.length) out.extras.push('tweeze');
   }
   const dental = ['tbrush', 'drill', 'pliers'].filter((id) => want.has(id));
