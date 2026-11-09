@@ -195,6 +195,44 @@ export const TOOL_ART = {
     <circle cx="40.6" cy="15" r="2.5" fill="#e3e8f4" stroke-width="2"/>
     ${sparkle(8.5, 11, 5)}${sparkle(6, 38, 3, '#fff', 1.5)}`, 'pierce'),
 
+  // lipstick: a red bullet out of its gold case, with a kiss mark
+  lips: art(`
+    <g transform="rotate(28 24 26)">
+      <path d="M18.5 15.5V9.5Q18.5 3.5 24.5 2.5L29.5 5.5V15.5z" fill="#e0284f"/>
+      <path d="M21 13V9.6Q21 6.5 23.6 5.4" stroke="#fff" stroke-width="2" opacity=".55"/>
+      <rect x="16.5" y="15.5" width="15" height="7" rx="1.6" fill="#ffc93c"/>
+      <rect x="15" y="22.5" width="18" height="21" rx="3" fill="#ff8ab5"/>
+      <rect x="18" y="25.5" width="3" height="15" rx="1.5" fill="#fff" stroke="none" opacity=".5"/>
+    </g>
+    <path d="M4.5 33.5q3.2-3 6 0q2.8-3 6 0q-2.5 5.5-6 5.5t-6-5.5z" fill="#ff5fa2" stroke-width="2"/>
+    <path d="M4.5 33.5q6 2.4 12 0" stroke-width="1.6"/>
+    ${sparkle(41, 8, 4.5)}`, 'lips'),
+
+  // blush: a round compact of pink powder and a fluffy brush
+  blush: art(`
+    <ellipse cx="18" cy="34" rx="14" ry="9" fill="#ffd2e2"/>
+    <ellipse cx="18" cy="32.5" rx="10.5" ry="5.6" fill="#ff7fb0" stroke-width="2"/>
+    <ellipse cx="14.5" cy="31.3" rx="3.4" ry="1.4" fill="#fff" stroke="none" opacity=".6"/>
+    <g transform="rotate(38 33 20)">
+      <rect x="30.5" y="18" width="5" height="25" rx="2.5" fill="#b28cff"/>
+      <rect x="29.5" y="15" width="7" height="5" rx="1.5" fill="#e3e8f4"/>
+      <path d="M28 15.5Q25.5 6 33 2.5Q40.5 6 38 15.5z" fill="#ffc4dc"/>
+      <path d="M31 13Q30 8 33 5" stroke="#fff" stroke-width="1.8" opacity=".7"/>
+    </g>
+    ${sparkle(7, 10, 4.5)}${sparkle(42, 40, 3, '#fff', 1.5)}`, 'blush'),
+
+  // face gems: a sticker sheet with a star, a heart and a diamond, one peeling off
+  gems: art(`
+    <rect x="5" y="9" width="30" height="32" rx="5" fill="#fff"/>
+    <path d="M14 15.5l1.8 3.7 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4-2.9-2.8 4-.6z" fill="#ffd25e" stroke-width="2"/>
+    <path d="M27 34.5q-6.5-4-6.5-7.6a3.2 3.2 0 0 1 6.5-.8 3.2 3.2 0 0 1 6.5.8q0 3.6-6.5 7.6z" fill="#ff6fb5" stroke-width="2"/>
+    <path d="M13 29.5l4 5-4 5-4-5z" fill="#6fd3ff" stroke-width="2"/>
+    <g transform="rotate(18 36 12)">
+      <path d="M36 4.5l6 7.5-6 7.5-6-7.5z" fill="#c08bff"/>
+      <path d="M33.6 9.5l2.4-2.6" stroke="#fff" stroke-width="1.6"/>
+    </g>
+    ${sparkle(43, 30, 4)}`, 'gems'),
+
   // tweezers: silver tweezers pulling a leaf
   tweezers: art(`
     <g transform="rotate(-38 14 32)">

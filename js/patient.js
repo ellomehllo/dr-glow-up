@@ -7,7 +7,7 @@ import { toneOf, LASH, OL } from './tones.js';
 import { CURLS, CAP, tuftKept, drawHair, drawBackHair } from './hair.js';
 import { drawBody, drawNeck, drawBehind } from './outfits.js';
 import { mix } from './people.js';
-import { hairNow, drawPierced } from './style.js';
+import { hairNow, paintNow, drawPierced, drawGems } from './style.js';
 import { makeDent, drawDebris, drawWorms, drawOwn, drawTeeth, AAH, OWN_PIERCINGS } from './extras.js';
 
 export { INK, CURLS };
@@ -148,7 +148,7 @@ export function makeState(setup = DEFAULT_SETUP) {
     worms: (st.worms || []).map((w) => ({ ...w, pull: 0, gone: false })),
     own: (st.own || (st.who && st.who.piercings ? OWN_PIERCINGS : [])).map((p) => ({ ...p, pull: 0, gone: false })),
     dent: makeDent(st.dent),
-    dye: null, pierced: [], // style tools (style.js): hair dye in progress, piercings added
+    dye: null, lips: null, blush: null, pierced: [], gems: [], // style tools (style.js): colours in progress, piercings and gems added
     // hurts (mood.js): marks left where a tool hurt the skin, and per eye: how red it is,
     // how long it stays squeezed shut, how much it is watering
     hurts: [], eyeRed: [0, 0], eyeShut: [0, 0], tears: [0, 0], pain: 0,
@@ -509,7 +509,7 @@ function drawBrows(ctx, s) {
 
 const GRIN = new Path2D('M -38 110 Q 0 122 38 110 Q 32 146 0 148 Q -32 146 -38 110 Z');
 function drawMouth(ctx, s, time) {
-  const m = s.moodV, y = 120, paint = s.who.lip, lip = paint || s.who.skin.lip, T = toneOf(s.who.skin);
+  const m = s.moodV, y = 120, T = toneOf(s.who.skin), lips = s.lips && !(s.lips.id === 'natural' && s.lips.t >= 1) ? paintNow(s, 'lips') : null, paint = lips ? lips.c : s.who.lip, lip = paint || s.who.skin.lip;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = T.mouth; ctx.lineWidth = 3.6;
   const kind = s.mouth;
   if (kind === 'grit') { // clenched teeth
@@ -915,9 +915,12 @@ function drawHead(ctx, s, time, dirtImg) {
   if (w.mustache) drawMustache(ctx, w);
   const blush = (w.blush || 0.16) + clamp01(s.moodV) * 0.4 + s.flush * 0.45;
   for (const side of [-1, 1]) soft(ctx, side * 96, 68, w.cheeks ? 38 : 32, w.cheeks ? 22 : 18, '#ff6b81', Math.min(0.85, blush * 1.35));
+  const bl = paintNow(s, 'blush');
+  if (bl && bl.a > 0.01) for (const side of [-1, 1]) { soft(ctx, side * 96, 70, 46, 28, bl.c, 0.8 * bl.a); soft(ctx, side * 92, 62, 18, 10, bl.hi, 0.5 * bl.a); }
   if (w.cheeks) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; for (const side of [-1, 1]) { ell(ctx, side * 90 - 6, 56, 9, 5, -0.3); ctx.fill(); } }
   drawHair(ctx, s);
   drawPierced(ctx, s);
+  drawGems(ctx, s);
   if (s.debris.length) drawDebris(ctx, s, time);
   if (dirtImg && s.dirtAlpha > 0) {
     ctx.globalAlpha = s.dirtAlpha;

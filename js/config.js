@@ -121,18 +121,26 @@ export const INTRO = {
   teeth: 30, rasp: 34, // chapter 4
   iron: 40, // chapter 5
   tweeze: 2, tbrush: 3, drill: 6, pliers: 8, // extras, early in chapter 1
+  dye: 5, lips: 7, pierce: 10, blush: 12, gems: 15, // style tools
 };
 // the extra tools (extras.js): a patient brings their troubles on top of the level's own
 export const EXTRAS = TOOLS.filter((t) => t.extra).map((t) => t.id);
 // the tool kit: every treatment, in the order they unlock (the slots fill up left to
 // right as the player progresses; ties keep the TOOLS order)
 export const KIT = TOOLS.map((t) => t.id).sort((a, b) => INTRO[a] - INTRO[b]);
-// style tools: in the kit from the start, used between treatments, outside the order.
-// Hair colour is free; every piercing costs aura (more away from the usual spots).
+// style tools: part of the glow up too. Each unlocks at its level (INTRO); a patient can
+// come in wanting a look (a wish: setup.wish), which then sits in their order and scores
+// by how close the result is. Picked when not wished, they are free to play with.
+// kind: 'colour' rubs a colour in (swatches), 'tap' places things with taps.
+// Every piercing the patient didn't ask for costs aura (more away from the usual spots).
 export const STYLES = [
-  { id: 'dye', name: 'Hair colour', prompt: 'RUB THE HAIR', icon: 'dye', view: { x: 0, y: -96, r: 250, rel: true } },
-  { id: 'pierce', name: 'Piercing', prompt: 'TAP TO PIERCE', icon: 'pierce', view: { x: 0, y: -4, r: 250, rel: true } },
-];
+  { id: 'dye', name: 'Hair colour', prompt: 'RUB THE HAIR', icon: 'dye', kind: 'colour', view: { x: 0, y: -96, r: 250, rel: true } },
+  { id: 'lips', name: 'Lipstick', prompt: 'RUB THE LIPS', icon: 'lips', kind: 'colour', view: { x: 0, y: 112, r: 150, rel: true } },
+  { id: 'pierce', name: 'Piercing', prompt: 'TAP TO PIERCE', icon: 'pierce', kind: 'tap', view: { x: 0, y: -4, r: 250, rel: true } },
+  { id: 'blush', name: 'Blush', prompt: 'RUB THE CHEEKS', icon: 'blush', kind: 'colour', view: { x: 0, y: 50, r: 220, rel: true } },
+  { id: 'gems', name: 'Face gems', prompt: 'TAP TO STICK', icon: 'gems', kind: 'tap', view: { x: 0, y: 0, r: 250, rel: true } },
+].sort((a, b) => INTRO[a.id] - INTRO[b.id]);
+export const STYLE_IDS = STYLES.map((t) => t.id);
 // every scored treatment in a fixed reference order; each level shuffles its own set
 // into the order the player has to follow (shown in the HUD, auto-played by Space)
 const SCORED = ['laser', 'pop', 'gold', 'circles', 'iron', 'nose', 'teeth', 'chisel', 'mew', 'rasp'];
@@ -168,6 +176,7 @@ function makeLevel(n, prev) {
   const pool = SCORED.filter((id) => INTRO[id] <= n);
   const fresh = pool.filter((id) => INTRO[id] === n);
   const freshX = EXTRAS.filter((id) => INTRO[id] === n); // the patient always brings this one
+  const freshS = STYLE_IDS.filter((id) => INTRO[id] === n); // the patient always wishes for this one
   const recent = pool.filter((id) => n - INTRO[id] >= 1 && n - INTRO[id] <= 2);
   const mine = pool.filter((id) => Math.floor(INTRO[id] / CHAPTER_SIZE) === c);
   // a new treatment's first level: only that one, so it can be learnt on its own
@@ -188,7 +197,7 @@ function makeLevel(n, prev) {
   const d = Math.max(0, Math.min(1, c * 0.19 + k * 0.03 + (boss ? 0.03 : 0) - (fresh.length ? 0.04 : 0)));
   const since = (id) => Math.max(0, n - INTRO[id]);
   return {
-    tools, chapter: c, boss, fresh: [...fresh, ...freshX], extra: freshX,
+    tools, chapter: c, boss, fresh: [...fresh, ...freshX, ...freshS], extra: freshX, style: freshS[0] || null,
     pass: 50 + 5 * c + (boss ? 5 : 0), // aura needed to unlock the next level
     zone: round(lerp(1.6, 0.75, d), 100), speed: round(lerp(0.85, 1.42, d), 100), jitter: round(lerp(0, 0.07, d), 1000),
     dirt: round(lerp(0.45, 1, d), 100),
