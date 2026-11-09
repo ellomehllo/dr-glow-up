@@ -10,6 +10,9 @@
 // fixed:     the sweet centre never moves (its visuals depend on the exact value).
 // brush:     dragged over the patient instead of pressed on targets.
 // multiHold: one target filled over several presses; no timing.
+// extra:     not one of a level's treatments: a patient brings the trouble it fixes on
+//            top of the level's own (extras.js), at random once it is unlocked.
+// mouth:     the patient opens wide ('aah') while it is out.
 // scored:    counts toward AURA.
 // name:      accessible label only; the game shows icons, not names.
 
@@ -74,11 +77,31 @@ export const TOOLS = [
     view: { x: 0, y: 4, r: 262, rel: true },
     hold: { time: 1.2, max: 1.25 }, sweet: { c: 1.0, w: 0.09 }, fixed: true, scored: true,
   },
+  {
+    id: 'tweeze', name: 'Tweezers', prompt: 'HOLD TO PULL', icon: 'tweezers',
+    view: { x: 0, y: -20, r: 270, rel: true },
+    hold: { time: 1.4, max: 1.2 }, sweet: { c: 0.82, w: 0.1 }, scored: true, extra: true,
+  },
+  {
+    id: 'tbrush', name: 'Brush teeth', prompt: 'SCRUB THE TEETH', icon: 'toothbrush',
+    view: { x: 0, y: 136, r: 120, rel: true },
+    hold: { time: 3.0, max: 1 }, sweet: null, brush: true, scored: false, extra: true, mouth: true,
+  },
+  {
+    id: 'drill', name: 'Fill cavities', prompt: 'HOLD TO FILL', icon: 'drill',
+    view: { x: 0, y: 136, r: 120, rel: true },
+    hold: { time: 1.5, max: 1.2 }, sweet: { c: 0.85, w: 0.1 }, scored: true, extra: true, mouth: true,
+  },
+  {
+    id: 'pliers', name: 'Pull bad tooth', prompt: 'HOLD TO PULL', icon: 'pliers',
+    view: { x: 0, y: 136, r: 120, rel: true },
+    hold: { time: 1.8, max: 1.2 }, sweet: { c: 0.8, w: 0.08 }, scored: true, extra: true, mouth: true,
+  },
 ];
 
 // ---------- 50 levels in 5 chapters of 10 ----------
-// Every patient comes in dirty, so every level starts with the wash and ends with the
-// glow; the treatments in between are the level's own, in its own shuffled order.
+// A level's list starts with the wash and ends with the glow, with its own treatments in
+// between; only some patients come in muddy, so the game drops the wash for the rest.
 // A level that brings in a new treatment has just that one between the wash and the
 // glow; the next two practise it mixed in with older ones, and the rest mix it with
 // what came before (the chapter's own treatments come up more often). Level 10 of each
@@ -97,7 +120,10 @@ export const INTRO = {
   laser: 20, mew: 24, // chapter 3
   teeth: 30, rasp: 34, // chapter 4
   iron: 40, // chapter 5
+  tweeze: 2, tbrush: 3, drill: 6, pliers: 8, // extras, early in chapter 1
 };
+// the extra tools (extras.js): a patient brings their troubles on top of the level's own
+export const EXTRAS = TOOLS.filter((t) => t.extra).map((t) => t.id);
 // the tool kit: every treatment, in the order they unlock (the slots fill up left to
 // right as the player progresses; ties keep the TOOLS order)
 export const KIT = TOOLS.map((t) => t.id).sort((a, b) => INTRO[a] - INTRO[b]);
@@ -141,6 +167,7 @@ function makeLevel(n, prev) {
   const c = Math.floor(n / CHAPTER_SIZE), k = n % CHAPTER_SIZE, boss = k === CHAPTER_SIZE - 1;
   const pool = SCORED.filter((id) => INTRO[id] <= n);
   const fresh = pool.filter((id) => INTRO[id] === n);
+  const freshX = EXTRAS.filter((id) => INTRO[id] === n); // the patient always brings this one
   const recent = pool.filter((id) => n - INTRO[id] >= 1 && n - INTRO[id] <= 2);
   const mine = pool.filter((id) => Math.floor(INTRO[id] / CHAPTER_SIZE) === c);
   // a new treatment's first level: only that one, so it can be learnt on its own
@@ -161,7 +188,7 @@ function makeLevel(n, prev) {
   const d = Math.max(0, Math.min(1, c * 0.19 + k * 0.03 + (boss ? 0.03 : 0) - (fresh.length ? 0.04 : 0)));
   const since = (id) => Math.max(0, n - INTRO[id]);
   return {
-    tools, chapter: c, boss, fresh,
+    tools, chapter: c, boss, fresh: [...fresh, ...freshX], extra: freshX,
     pass: 50 + 5 * c + (boss ? 5 : 0), // aura needed to unlock the next level
     zone: round(lerp(1.6, 0.75, d), 100), speed: round(lerp(0.85, 1.42, d), 100), jitter: round(lerp(0, 0.07, d), 1000),
     dirt: round(lerp(0.45, 1, d), 100),

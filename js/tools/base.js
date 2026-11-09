@@ -21,8 +21,9 @@
 //   complete()                true once the job is done
 //   result()                  {score, verdict} when complete
 //
-// Both: enter(), update(dt), outroDone(), draw(ctx, time) (stage space, over the
-// patient), exit(), reset(). `g` is the shared context from game.js: patient state
+// Both: enter() (first time out), resume() (picked again after being left halfway:
+// everything done so far stays), update(dt), outroDone(), draw(ctx, time) (stage space,
+// over the patient), exit() (put away, maybe halfway), reset(). `g` is the shared context from game.js: patient state
 // `s`, `fx`, `audio`, `dirt`, `head(x, y)` (head to stage), `prog`, `ghost`, `hint`,
 // `fail`, `hit`, `shake`, `bump`, `react`, `toast`, `time`.
 import { rand, TAU } from '../draw.js';
@@ -41,6 +42,8 @@ export class Tool {
     this.done = [];
     this.sweets = null;
     this.nudge = 0; // flashes the targets after a press that missed them
+    this.begun = false; // set by the controller after the first enter()
+    this.tScores = []; this.tVerdicts = []; // per target done so far
   }
 
   // ---------- targets ----------
@@ -56,6 +59,8 @@ export class Tool {
     }
     return best;
   }
+  // target i needs nothing (a free use, picked again or not needed, skips it)
+  fixed() { return false; }
   nextIndex() { const n = this.targets().length; for (let i = 0; i < n; i++) if (!this.done[i]) return i; return -1; }
   left() { const n = this.targets().length; let k = 0; for (let i = 0; i < n; i++) if (!this.done[i]) k++; return k; }
   sweetFor(i) { return (this.sweets && this.sweets[i]) || this.def.sweet; }
@@ -72,6 +77,8 @@ export class Tool {
     // every target gets its own timing on harder levels
     this.sweets = sw ? Array.from({ length: n }, () => ({ c: sw.c + rand(-j, j), w: sw.w })) : null;
   }
+  // back after being left halfway: show again, wait for a press
+  resume() { this.alphaGoal = 1; this.cur = -1; }
   begin() {}
   hold(dt, p) { this.p = p; }
   idle() {}

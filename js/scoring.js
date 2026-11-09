@@ -25,16 +25,11 @@ export function rankFor(aura) {
   return { rank: r, next, toNext: next ? next.min - aura : 0 };
 }
 
-// Aura points lost for each treatment done out of order (the order is the row of
-// treatment badges under the aura). A treatment is in order when it is the first
-// unfinished one in that row at the moment it is picked. Wash and glow count too.
-export const ORDER_PENALTY = 20;
-
-// a patient's aura: the average treatment score, minus ORDER_PENALTY per treatment done
-// out of turn and minus `minus` more (piercings, style.js)
-export function auraOf(scores, misses = 0, minus = 0) {
+// a patient's aura: the average treatment score, minus `minus` (piercings added, hurts).
+// Treatments can be done in any order.
+export function auraOf(scores, minus = 0) {
   if (!scores.length) return 0;
-  return Math.max(0, Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) - misses * ORDER_PENALTY - minus);
+  return Math.max(0, Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) - minus);
 }
 
 // saved progress: highest unlocked level (1-based) and the best aura per level.

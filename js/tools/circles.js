@@ -21,6 +21,7 @@ export class CirclesTool extends Tool {
   reset() { super.reset(); this.fly = []; this.acc = 0; this.press = 0; }
   targets() { return SPOTS; }
   hitR(t) { return t.r + 6; }
+  fixed(i) { return this.g.s.circ[i] < 0.05; }
   enter() { super.enter(); this.reset(); this.g.s.lookAt = { x: 0, y: -40 }; }
   begin(i) { this.g.react('happy', 99, null); this.press = 0; this.g.s.lookAt = null; void i; }
   hold(dt, p) {

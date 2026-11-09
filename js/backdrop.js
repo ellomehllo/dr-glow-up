@@ -1,11 +1,15 @@
 // The skin clinic behind the patient. Drawn in "room" units with a gentle parallax
 // against the camera (the room moves and scales at K of the stage): mint walls with a
-// tiled lower half, a window with blinds and drifting clouds, a medical plus sign, a
-// wall clock, a ring exam lamp, a shelf of skincare bottles, a framed certificate, a
-// cabinet, a potted plant and privacy curtains. Soap bubbles float up in screen space.
+// tiled lower half, a doorway into the waiting room (its window with blinds and
+// drifting clouds, and the next patients on a bench: waiting.js), a medical plus sign,
+// a wall clock, a ring exam lamp, a shelf of skincare bottles, a framed certificate, a
+// cabinet and privacy curtains. Soap bubbles float up in screen space.
 import { TAU, makeCanvas } from './draw.js';
+import { DOOR, SEAT_Y, FLOOR_IN } from './waiting.js';
 
-const K = 0.62;
+const FONT = 'Fredoka, ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif';
+
+export const K = 0.62; // the room moves this much slower than the patient (depth)
 const LINE = '#557884';
 const WALL = '#d6f3ec';
 
@@ -53,13 +57,12 @@ export class Backdrop {
     ctx.translate(-ox, -oy);
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     this.walls(ctx, x0, x1, y0, y1);
-    this.windowAt(ctx, time);
+    this.waitingRoom(ctx, time);
     this.sign(ctx);
     this.clock(ctx, time);
     this.certificate(ctx);
     this.shelf(ctx);
     this.cabinet(ctx);
-    this.plant(ctx, time);
     this.curtains(ctx, y1);
     this.lamp(ctx, time);
     ctx.restore();
@@ -106,8 +109,7 @@ export class Backdrop {
     }
   }
 
-  windowAt(ctx, time) {
-    const x = -800, y = -640, w = 380, h = 470;
+  windowAt(ctx, time, x = -800, y = -640, w = 380, h = 470) {
     // sunbeams falling into the room
     ctx.fillStyle = 'rgba(255,255,255,0.2)';
     ctx.beginPath(); ctx.moveTo(x + 40, y + h); ctx.lineTo(x + 200, y + h); ctx.lineTo(x + 620, y + h + 700); ctx.lineTo(x + 330, y + h + 700); ctx.closePath(); ctx.fill();
@@ -148,6 +150,56 @@ export class Backdrop {
       ctx.save(); ctx.translate(x + 68 + dx, y + h - 32); ctx.rotate(a);
       ctx.beginPath(); ctx.ellipse(0, -18, 11, 22, 0, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
     }
+  }
+
+  // the waiting room through a doorway in the back wall: a peach room with the window,
+  // a bench, and the next patients on it (waiting.js draws them)
+  waitingRoom(ctx, time) {
+    const { x, y, w, h } = DOOR, b = y + h, r = 70;
+    const inside = () => { ctx.beginPath(); archPath(ctx, x, y, w, b, r); ctx.closePath(); ctx.clip(); };
+    ctx.save();
+    inside();
+    ctx.fillStyle = '#ffeadf'; ctx.fillRect(x, y, w, h);
+    const rail = 120, f = FLOOR_IN;
+    ctx.fillStyle = '#ffd9c7'; ctx.fillRect(x, rail, w, f - rail);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let yy = rail + 70; yy < f; yy += 70) { ctx.moveTo(x, yy); ctx.lineTo(x + w, yy); }
+    for (let xx = x + 20; xx < x + w; xx += 70) { ctx.moveTo(xx, rail); ctx.lineTo(xx, f); }
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x, rail - 12, w, 22);
+    // its floor: the clinic's checks, smaller with the distance
+    ctx.fillStyle = '#f5e6d2'; ctx.fillRect(x, f, w, b - f);
+    ctx.fillStyle = '#ecd8bf';
+    for (let yy = f + 24, r = 0; yy < b; yy += 80, r++) for (let xx = x + (r % 2) * 80; xx < x + w; xx += 160) ctx.fillRect(xx, yy, 80, 80);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x, f, w, 24);
+    ctx.strokeStyle = LINE; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x, f); ctx.lineTo(x + w, f); ctx.moveTo(x, f + 24); ctx.lineTo(x + w, f + 24); ctx.stroke();
+    this.windowAt(ctx, time, x + 175, y + 120, 300, 290);
+    // a shadow cast by the door frame, so the room reads as further back
+    const sh = ctx.createLinearGradient(x + w - 90, 0, x + w, 0);
+    sh.addColorStop(0, 'rgba(85,120,132,0)'); sh.addColorStop(1, 'rgba(85,120,132,0.22)');
+    ctx.fillStyle = sh; ctx.fillRect(x + w - 90, y, 90, h);
+    // bench back
+    rr(ctx, x + 34, SEAT_Y - 150, w - 68, 130, 26, '#9fdccf', LINE, 5);
+    ctx.restore();
+    if (this.waiting) this.waiting.draw(ctx, time);
+    ctx.save();
+    inside();
+    // bench seat and legs, in front of the people on it
+    rr(ctx, x + 22, SEAT_Y, w - 44, 48, 18, '#7ccabd', LINE, 5);
+    for (const lx of [x + 70, x + w / 2 - 13, x + w - 96]) rr(ctx, lx, SEAT_Y + 48, 26, FLOOR_IN + 14 - SEAT_Y - 48, 8, '#ffffff', LINE, 4);
+    ctx.restore();
+    // the frame
+    ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+    ctx.beginPath(); archPath(ctx, x, y, w, b + 34, r); ctx.lineWidth = 36; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    ctx.beginPath(); archPath(ctx, x - 18, y - 18, w + 36, b + 34, r + 18); ctx.lineWidth = 6; ctx.strokeStyle = LINE; ctx.stroke();
+    ctx.beginPath(); archPath(ctx, x + 18, y + 18, w - 36, b, Math.max(10, r - 18)); ctx.lineWidth = 4; ctx.stroke();
+    ctx.lineCap = 'round';
+    // and its sign
+    rr(ctx, x + w / 2 - 136, y - 112, 272, 66, 22, '#ffffff', LINE, 5);
+    ctx.fillStyle = LINE; ctx.font = `700 38px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('WAITING', x + w / 2, y - 78);
   }
 
   sign(ctx) {
@@ -232,23 +284,6 @@ export class Backdrop {
     ctx.beginPath(); ctx.moveTo(x + 380, y - 84); ctx.quadraticCurveTo(x + 384, y - 140, x + 410, y - 128); ctx.quadraticCurveTo(x + 440, y - 150, x + 432, y - 84); ctx.closePath(); ctx.fill(); ctx.stroke();
   }
 
-  plant(ctx, time) {
-    const x = -560, y = 900;
-    const sway = Math.sin(time * 0.8) * 0.04;
-    ctx.save(); ctx.translate(x, y - 150); ctx.rotate(sway);
-    ctx.fillStyle = '#5fd08f'; ctx.strokeStyle = LINE; ctx.lineWidth = 5;
-    for (const [a, l] of [[-0.9, 250], [-0.45, 320], [0, 360], [0.45, 310], [0.9, 240], [-0.2, 280], [0.25, 270]]) {
-      ctx.save(); ctx.rotate(a);
-      ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(48, -l * 0.5, 0, -l); ctx.quadraticCurveTo(-48, -l * 0.5, 0, 0);
-      ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(0, -l * 0.85); ctx.lineWidth = 3; ctx.stroke(); ctx.lineWidth = 5;
-      ctx.restore();
-    }
-    ctx.restore();
-    rr(ctx, x - 90, y - 170, 180, 170, [10, 10, 34, 34], '#ff9a76', LINE, 6);
-    rr(ctx, x - 104, y - 186, 208, 36, 12, '#ffb594', LINE, 6);
-  }
-
   curtains(ctx, y1) {
     const bottom = Math.min(Math.max(y1, 0), 900);
     ctx.fillStyle = '#c9ccd8'; ctx.fillRect(-1700, -1130, 3400, 18);
@@ -303,4 +338,11 @@ export class Backdrop {
     }
     ctx.globalAlpha = 1;
   }
+}
+
+// a doorway's outline: up the left side, round the top corners, down the right side
+function archPath(ctx, x, y, w, b, r) {
+  ctx.moveTo(x, b); ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r); ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r); ctx.lineTo(x + w, b);
 }

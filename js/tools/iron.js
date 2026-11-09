@@ -26,6 +26,7 @@ export class IronTool extends Tool {
   }
   // head-space point (with direction) at fraction f along wrinkle i
   front(i, f) { const w = this.g.s.wrk[i]; return w.poly.at(w.poly.len * Math.min(1, Math.max(0, f))); }
+  fixed(i) { return this.g.s.wrk[i].f >= 1; }
   enter() { super.enter(); this.reset(); const i = this.nextIndex(); if (i >= 0) this.g.s.lookAt = this.front(i, 0.5); }
   begin(i) { this.g.react('normal', 99, 'flat'); this.g.s.lookAt = this.front(i, 0.5); }
   hold(dt, p) {

@@ -1,11 +1,19 @@
 // The run. Fifty levels in five chapters, each with a new patient. The player picks each
 // treatment the patient needs from the tool kit, in any order, and one controller drives it:
 //   intro | arrive -> pick -> transition -> ready <-> holding | brushing -> outro -> pick ...
-// The kit holds every treatment; ones not unlocked yet are empty slots, and ones this
-// patient doesn't need say so. A treatment can be swapped for another until it is first
-// pressed; after that it is finished first. Space picks the next one in the level's order.
-// The level's order is the row of badges under the aura: finishing a treatment that
-// wasn't next in that row costs ORDER_PENALTY aura (scoring.js).
+// The kit holds every treatment; ones not unlocked yet are empty slots. Any unlocked one
+// can be picked at any time the finger is up, even halfway through another: the one left
+// keeps its progress (the targets done, their scores) and carries on where it was when
+// picked again. The row of badges under the aura is what this patient needs (and what
+// scores); Space picks the first one not done yet. A tool they don't need, or one already
+// done, comes out as a free use (beginSpare): no score, and it skips whatever is already
+// fine (Tool.fixed), so with nothing left it only says so.
+// Besides the level's own treatments a patient can bring extras (extras.js): debris in
+// the hair, a worm, piercings, plaque, cavities, a rotten tooth. Tapping the mouth while
+// picking makes them open wide to show their teeth.
+// After the results the next patient comes in from the waiting room (waiting.js), passed
+// or not: a pass moves on to the next level, a fail plays the same level again with a new
+// patient. The retry button keeps the same patient.
 // In `ready` the player presses ON a target (a pimple, a scar, the jaw...) and holds;
 // each target is scored on its own release, and the treatment ends once all of its
 // targets are done. Brush treatments (wash, hair) are dragged over the patient instead.
@@ -20,17 +28,23 @@
 // anger, tears, a cold shoulder or grumbling for a bad one.
 import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES } from './config.js';
 import { REGISTRY } from './tools/index.js';
-import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress, ORDER_PENALTY } from './scoring.js';
+import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress } from './scoring.js';
 import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, onFace, eyeSide, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
-import { patientFor } from './people.js';
+import { patientFor, randomPatient, pickKind } from './people.js';
+import { rollExtras, inMouth } from './extras.js';
 import { DYES, DYE_RUB, setDye, hairNow, onHair, pierceSpot, pierceCost, PIERCE } from './style.js';
 import { HURT, HURT_KIND, temperOf, lineFor, feelingFor, faceFor, BAD } from './mood.js';
 import { easeIO, rand, TAU } from './draw.js';
+import { WaitingRoom, DOOR } from './waiting.js';
+import { K as ROOM_K } from './backdrop.js';
 
 const TAP_IGNORE = 0.06; // a release before this much progress is a false start, not a release
 const TRANSITION = 0.9;
 const FINALE = 2.2;
 const ARRIVE = 1.5; // a new patient settles in before the first treatment
+const CALL = 2.0; // "Next!": the camera visits the waiting room before the next patient sits down
+// the camera on the waiting room's doorway (the room moves at ROOM_K, so its point is scaled up)
+const WAIT_VIEW = { x: (DOOR.x + DOOR.w / 2) / ROOM_K, y: 250 / ROOM_K, r: 235 };
 const FINGER = 30; // screen px: the smallest a target's hit area gets
 const WORD = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!' };
 const PLAYING = new Set(['arrive', 'pick', 'transition', 'ready', 'holding', 'brushing', 'outro', 'style']); // the kit button shows
@@ -57,7 +71,7 @@ function pickSpots(n, pimples) {
 
 export class Game {
   constructor(o) {
-    // ui, audio, input, fx, dirt, director, backdrop, playables
+    // ui, audio, input, fx, dirt, director, backdrop, playables, cloud
     Object.assign(this, o);
     this.progress = loadProgress();
     this.level = Math.min(this.progress.unlocked, LEVELS.length) - 1;
@@ -65,6 +79,11 @@ export class Game {
     const s = (this.s = makeState(this.setup));
     this.before = makeState(this.setup); // the patient exactly as they came in
     this.dirt.setup(this.setup);
+    // the next patients, on a bench through the back doorway: new characters, never the
+    // same kind as anyone already there or in the chair
+    this.waiting = new WaitingRoom((n, avoid) => this.makeSetup(n % LEVELS.length, { avoid: [...avoid, this.s ? this.s.who.kind : null] }));
+    this.backdrop.waiting = this.waiting;
+    this.waiting.fill(this.level);
     this.g = {
       s, fx: this.fx, audio: this.audio, dirt: this.dirt, time: 0,
       prog: 0, ghost: -1, hint: false, fail: 0, hit: 0,
@@ -77,12 +96,10 @@ export class Game {
       sting: (side) => this.sting(side),
     };
     this.tools = []; this.defs = [];
+    this.spares = {}; this.spare = false; // free uses of tools (by id), and whether the one out is one
     this.buildTools();
     this.entered = new Set();
     this.used = new Set(); // treatments (index into defs) finished on this patient
-    this.misses = new Set(); // ...of those, the ones done out of order
-    this.inOrder = true; // the current treatment was the next one in the row when picked
-    this.touched = false; // the current treatment has been pressed, so it can't be swapped
     this.tool = null; this.idx = -1;
     this.style = null; // the style tool out: { def, down, last } (style mode)
     this.dyeId = 'pink'; // the dye picked last
@@ -93,7 +110,6 @@ export class Game {
     this.timers = [];
     this.scores = [];
     this.verdicts = [];
-    this.tScores = []; this.tVerdicts = []; // per target, current treatment
     this.flash = 0;
     this.glintT = 0;
     this.splitV = 0; this.splitUser = false;
@@ -102,14 +118,25 @@ export class Game {
     this.input.on('up', (src) => this.onUp(src));
   }
 
-  // a fresh patient for a level: who they are and what they came in with (only what
-  // this level treats: pimples, scars, spots, wrinkles, a big nose, dark circles...)
-  makeSetup(level, kind) {
-    const L = LEVELS[level], has = (id) => L.tools.includes(id);
-    const pimples = has('pop') ? shuffle(PIMPLE_SPOTS.slice()).slice(0, L.pimples) : [];
+  // a fresh patient for a level: who they are and what they came in with (what this
+  // level treats: pimples, scars, spots, wrinkles, a big nose, dark circles..., plus any
+  // extras). o: { kind } a given kind (testing), { avoid } a new random patient of none of
+  // those kinds, { from } a patient from the waiting room, made for some level: the same
+  // person with the same extras, fitted to this level. Neither: the level's own patient.
+  makeSetup(level, o = {}) {
+    const L = LEVELS[level], has = (id) => L.tools.includes(id), from = o.from;
+    if (from && from.level === level) return from;
+    const who = from ? from.who : o.kind ? patientFor(level, o.kind) : o.avoid ? randomPatient(pickKind(o.avoid)) : patientFor(level);
+    // pimples: the ones they sat in the waiting room with first
+    const had = from ? from.pimples : [];
+    const pimples = has('pop') ? [...had, ...shuffle(PIMPLE_SPOTS.filter((p) => !had.includes(p)))].slice(0, L.pimples) : [];
+    const ex = rollExtras({ open: (id) => INTRO[id] <= level, must: L.extra, who, carry: from });
+    // only some come in muddy and need a wash (always on the first level, to learn it)
+    const muddy = from ? from.dirt > 0 : level === 0 || Math.random() < 0.3;
+    const mid = L.tools.slice(1, -1);
     return {
-      who: patientFor(level, kind), // each level has its own patient
-      pimples,
+      level, who, pimples, ...ex,
+      tools: [...(muddy ? ['scrub'] : []), ...mid, ...ex.extras, L.tools[L.tools.length - 1]], // the glow stays last
       cracks: has('gold') ? some(CRACKS, L.scars) : [],
       spots: has('laser') ? pickSpots(L.spots, pimples) : [],
       wrinkles: has('iron') ? some(WRINKLES, L.wrinkles) : [],
@@ -120,7 +147,7 @@ export class Game {
       nose0: has('nose') ? 0 : 1,
       circ0: has('circles') ? 1 : 0,
       teeth0: has('teeth') ? 0 : 1,
-      dirt: has('scrub') ? L.dirt : 0,
+      dirt: muddy ? L.dirt : 0,
       seed: (Math.random() * 1e9) | 0,
     };
   }
@@ -132,18 +159,21 @@ export class Game {
       fresh: L.fresh.map((id) => TOOLS.find((t) => t.id === id)),
     };
   }
-  // the level's treatments with its difficulty applied
+  // the patient's treatments (the level's and their extras) with the level's difficulty
   buildTools() {
-    const L = LEVELS[this.level];
-    this.defs = L.tools.map((id) => {
-      const base = TOOLS.find((t) => t.id === id);
-      // each target nudges its own sweet centre by up to `jitter` (see Tool.enter)
-      const def = { ...base, hold: { ...base.hold, time: base.hold.time / L.speed }, jitter: base.fixed ? 0 : L.jitter };
-      if (base.sweet) def.sweet = { c: base.sweet.c, w: base.sweet.w * L.zone };
-      return def;
-    });
+    this.defs = this.setup.tools.map((id) => this.defFor(id));
     this.tools = this.defs.map((def) => new REGISTRY[def.id](this.g, def));
   }
+  // a treatment with the level's difficulty applied
+  defFor(id) {
+    const L = LEVELS[this.level], base = BY_ID[id];
+    // each target nudges its own sweet centre by up to `jitter` (see Tool.enter)
+    const def = { ...base, hold: { ...base.hold, time: base.hold.time / L.speed }, jitter: base.fixed ? 0 : L.jitter };
+    if (base.sweet) def.sweet = { c: base.sweet.c, w: base.sweet.w * L.zone };
+    return def;
+  }
+  // unlocked: reached by the player (any level opened so far)
+  isOpen(id) { return INTRO[id] < Math.max(this.progress.unlocked, this.level + 1); }
 
   view(v) { return { x: v.x || 0, y: v.y + (v.rel ? headBase(this.s) : 0), r: v.r }; }
 
@@ -168,11 +198,13 @@ export class Game {
     const reached = Math.max(this.progress.unlocked, this.level + 1); // levels the player has opened
     return KIT.map((id) => {
       const t = BY_ID[id], i = this.defs.findIndex((d) => d.id === id);
+      // need: this patient needs it; done: needed and done; free: not needed (both can be
+      // used freely); now: the one out
       let state = 'need';
       if (INTRO[id] >= reached) state = 'locked';
-      else if (i < 0) state = 'none';
+      else if (this.tool && this.tool.def.id === id) state = 'now';
+      else if (i < 0) state = 'free';
       else if (this.used.has(i)) state = 'done';
-      else if (this.tool && i === this.idx) state = 'now';
       return { id, icon: t.icon, name: t.name, state, lv: INTRO[id] + 1 };
     });
   }
@@ -185,14 +217,15 @@ export class Game {
     }));
   }
   refreshKit() { this.ui.setKit(this.kit(), this.styleKit()); }
-  // a tool can be picked between treatments, or to swap one that hasn't been pressed yet
+  // a tool can be picked whenever the finger is up: between treatments, or halfway
+  // through one (it keeps its progress)
   canPick() {
     const m = this.mode;
-    return m === 'intro' || m === 'arrive' || m === 'pick' || m === 'style' || ((m === 'transition' || m === 'ready') && !this.touched);
+    return m === 'intro' || m === 'arrive' || m === 'pick' || m === 'style' || m === 'transition' || m === 'ready';
   }
   syncKit() { this.ui.kitButton({ on: PLAYING.has(this.mode), busy: !this.canPick(), call: this.mode === 'pick' }); }
   openKit() {
-    if (!this.canPick()) { this.ui.toast('FINISH THIS ONE FIRST'); this.ui.shake(); this.audio.tink(0.5); return; }
+    if (!this.canPick()) { this.ui.shake(); this.audio.tink(0.5); return; }
     if (this.mode === 'intro' || this.mode === 'arrive') this.toPick();
     this.refreshKit();
     this.ui.openKit();
@@ -208,15 +241,15 @@ export class Game {
   }
   // a slot in the kit was picked: start that treatment, or say why not (returns false)
   choose(id) {
-    if (!this.canPick()) { this.ui.toast('FINISH THIS ONE FIRST'); return false; }
+    if (!this.canPick()) return false;
     if (STYLE_BY_ID[id]) return this.chooseStyle(id);
+    if (!this.isOpen(id)) return false;
     const i = this.defs.findIndex((d) => d.id === id);
-    if (i < 0) { this.ui.toast('NOTHING TO FIX'); this.audio.tink(0.5); return false; }
-    if (this.used.has(i)) { this.ui.toast('ALREADY DONE'); return false; }
-    if (this.tool && i === this.idx) { this.closeKit(); return true; } // the one already out
-    if (this.tool) this.tool.exit(); // swapped before it was pressed
+    if (this.tool && this.tool.def.id === id) { this.closeKit(); return true; } // the one already out
+    if (this.tool) this.tool.exit(); // left as it is, to carry on later
     this.endStyle(false);
-    this.beginTool(i);
+    if (i >= 0 && !this.used.has(i)) this.beginTool(i);
+    else this.beginSpare(id);
     return true;
   }
 
@@ -224,7 +257,7 @@ export class Game {
   chooseStyle(id) {
     const def = STYLE_BY_ID[id];
     if (this.style && this.style.def === def) { this.closeKit(); return true; }
-    if (this.tool) { this.tool.exit(); this.tool = null; this.idx = -1; } // swapped before it was pressed
+    if (this.tool) { this.tool.exit(); this.tool = null; this.idx = -1; } // left as it is, to carry on later
     this.ui.closeKit();
     this.style = { def, down: false, last: null, rub: 0 };
     const s = this.s;
@@ -331,7 +364,7 @@ export class Game {
   }
   // between treatments: show the whole face and wait for a tool
   toPick() {
-    this.tool = null; this.idx = -1; this.p = 0; this.touched = false;
+    this.tool = null; this.idx = -1; this.p = 0; this.spare = false;
     this.s.lookAt = null;
     this.ui.titleCard(false);
     this.director.go(this.view(VIEWS.pick), TRANSITION);
@@ -341,13 +374,16 @@ export class Game {
     this.setMode('pick');
     this.refreshKit();
   }
-  startLevel(n, kind) {
+  // o: a kind (testing), or { setup } the same patient again, or { from } a patient from
+  // the waiting room (see makeSetup)
+  startLevel(n, o = {}) {
     const t0 = performance.now();
     const g = this.g;
+    if (typeof o === 'string') o = { kind: o };
     for (const t of this.entered) { t.exit(); t.outro = false; }
     this.entered.clear();
     this.level = n;
-    this.setup = this.makeSetup(n, kind);
+    this.setup = o.setup || this.makeSetup(n, o);
     resetState(this.s, this.setup);
     resetState(this.before, this.setup);
     this.dirt.setup(this.setup);
@@ -355,10 +391,9 @@ export class Game {
     this.fx.clear();
     this.audio.stopLoops();
     this.scores = []; this.verdicts = []; this.timers = [];
-    this.tScores = []; this.tVerdicts = [];
     this.flash = 0; g.fail = 0; g.hit = 0; g.ghost = -1; g.prog = 0; g.hint = false;
     this.tool = null; this.idx = -1; this.style = null;
-    this.used = new Set(); this.misses = new Set(); this.inOrder = true; this.touched = false;
+    this.used = new Set(); this.spares = {}; this.spare = false;
     this.clearHurts();
     this.ui.reset();
     this.refreshKit();
@@ -382,21 +417,33 @@ export class Game {
     this.setMode('arrive');
     this.retryMs = performance.now() - t0;
   }
-  beginTool(i) {
-    const tool = this.tools[i], def = tool.def;
+  // a free use of a tool: one this patient doesn't need, or needs but has had already. It
+  // scores nothing; it keeps its own progress until it is finished
+  beginSpare(id) {
+    if (!this.spares[id]) this.spares[id] = new REGISTRY[id](this.g, this.defFor(id));
+    this.beginTool(-1, this.spares[id]);
+  }
+  beginTool(i, spare = null) {
+    const tool = spare || this.tools[i], def = tool.def;
+    this.spare = !!spare;
     this.ui.closeKit();
-    this.inOrder = i === this.nextIdx();
-    this.idx = i; this.tool = tool; this.p = 0; this.sweet = null; this.touched = false;
-    this.tScores = []; this.tVerdicts = [];
+    // a glow carries on from what it had; everything else starts each target from zero
+    this.idx = i; this.tool = tool; this.p = def.multiHold ? tool.p : 0; this.sweet = null;
     this.ghost = !this.seenHint.has(def.id);
     tool.outro = false; tool.outroT = 0;
-    tool.enter();
+    // first time out it sets up; picked again after being left, it carries on
+    if (tool.begun) tool.resume(); else { tool.enter(); tool.begun = true; }
     this.entered.add(tool);
+    if (spare && !def.brush) {
+      // what is already fine needs nothing; with nothing left it says so (and stays out)
+      tool.done = tool.done.map((d, k) => d || tool.fixed(k));
+      if (tool.left() === 0) this.after(TRANSITION * 0.7, () => { if (this.tool === tool) this.ui.toast('NOTHING TO FIX'); });
+    }
     this.director.go(this.view(def.view), TRANSITION);
     this.director.setObstruction(this.ui.obstruction('play'));
     this.ui.titleCard(false);
     this.ui.showTool(def, i);
-    this.ui.markNext(this.nextIdx()); // out of order: the badge that should be next stays marked
+    this.ui.markNext(-1);
     this.ui.hidePrompt();
     this.audio.whoosh(0.12);
     this.setMode('transition');
@@ -429,6 +476,7 @@ export class Game {
     const minR = FINGER / this.director.out.s;
     const near = tool.targets().some((t, i) => !tool.done[i] && Math.hypot(q.x - t.x, q.y - t.y) <= Math.max(tool.hitR(t), minR) + 18);
     if (near || !(onFace(q.x, q.y, 4) || eyeSide(this.s, q.x, q.y) >= 0)) { this.miss(q); return; }
+    if (tool.def.mouth && inMouth(q.x, q.y)) { this.miss(q); return; } // a wrong tooth: no harm
     tool.nudge = 1;
     this.hurtAt(q.x, q.y, HURT_KIND[tool.def.id] || 'bruise');
   }
@@ -474,6 +522,7 @@ export class Game {
     s.sweat = 1; s.flush = 1; this.g.fail = 1;
     // it stays with them: a temper builds (sad ones just sink, through the mood above)
     if (['angry', 'grumpy', 'cold'].includes(temperOf(who))) s.anger = Math.min(0.55, s.pain * 0.1);
+    this.waiting.react(side >= 0 ? 'eye' : 'skin');
     const cost = free ? 0 : side >= 0 ? HURT.eye : HURT.skin;
     if (cost) {
       this.hurtCost += cost;
@@ -529,6 +578,18 @@ export class Game {
       const m = headToStage(s, 30, 132); this.fx.puff(m.x, m.y, 1, '235,235,245');
     }
   }
+  // a tap on the mouth while picking: they open wide for a moment, teeth and all
+  peek() {
+    const q = this.pointer(), s = this.s;
+    if (!inMouth(q.x, q.y)) return false;
+    react(s, 'normal', 1.8, 'aah');
+    s.lookAt = { x: 0, y: 200 };
+    this.after(1.8, () => { if (this.mode === 'pick') s.lookAt = null; });
+    this.director.go(this.view({ x: 0, y: 120, r: 170, rel: true }), 0.5);
+    this.after(1.7, () => { if (this.mode === 'pick') this.director.go(this.view(VIEWS.pick), 0.6); });
+    this.audio.boing(1.2);
+    return true;
+  }
   // a press that missed every target: a ripple where it landed, and the targets flash
   miss(q) {
     if (this.tool) this.tool.nudge = 1;
@@ -540,7 +601,6 @@ export class Game {
     tool.cur = i;
     if (!def.multiHold) { this.p = 0; tool.p = 0; }
     this.sweet = tool.sweetFor(i);
-    this.touched = true;
     this.setMode('holding');
     this.seenHint.add(def.id);
     this.ghost = false;
@@ -550,7 +610,6 @@ export class Game {
   }
   startBrush(src) {
     this.brushKey = src === 'key';
-    this.touched = true;
     this.setMode('brushing');
     this.seenHint.add(this.tool.def.id);
     this.ghost = false;
@@ -563,19 +622,19 @@ export class Game {
     let r = scoreRelease(this.p, this.sweet);
     r = tool.releaseTarget(i, this.p, r) || r;
     tool.done[i] = true; tool.cur = -1;
-    this.tScores.push(r.score); this.tVerdicts.push(r.verdict);
+    tool.tScores.push(r.score); tool.tVerdicts.push(r.verdict);
     this.ui.holding(false);
-    const sum = this.tScores.reduce((a, b) => a + b, 0);
+    const sum = tool.tScores.reduce((a, b) => a + b, 0);
     if (n > 1) {
       this.miniFeedback(r, tool.targets()[i]);
-      if (tool.def.scored) { this.scores[this.idx] = sum / n; this.updateAura(); }
+      if (tool.def.scored && !this.spare) { this.scores[this.idx] = sum / n; this.updateAura(); }
     }
     if (tool.left() > 0) { this.p = 0; tool.p = 0; this.g.prog = 0; this.setMode('ready'); return; }
     // every target done: the treatment scores their average
     const avg = Math.round(sum / n);
     let verdict = r.verdict;
     if (n > 1) {
-      const count = (v) => this.tVerdicts.filter((x) => x === v).length;
+      const count = (v) => tool.tVerdicts.filter((x) => x === v).length;
       verdict = avg >= 95 ? 'perfect' : avg >= 80 ? 'good' : count('late') > count('early') ? 'late' : 'early';
     }
     this.finishTool({ score: avg, verdict });
@@ -584,14 +643,11 @@ export class Game {
     const tool = this.tool;
     result = tool.finish(result) || result;
     tool.outro = true;
-    this.scores[this.idx] = result.score;
-    this.verdicts[this.idx] = result.verdict;
-    this.used.add(this.idx);
-    if (!this.inOrder) {
-      // done before its turn: the aura pays for it
-      this.misses.add(this.idx);
-      this.ui.stepMiss(this.idx);
-      this.after(0.55, () => this.ui.toast(`WRONG ORDER  -${ORDER_PENALTY}`));
+    if (this.spare) delete this.spares[tool.def.id]; // a free use: next time is a fresh one
+    else {
+      this.scores[this.idx] = result.score;
+      this.verdicts[this.idx] = result.verdict;
+      this.used.add(this.idx);
     }
     this.refreshKit();
     this.feedback(result);
@@ -612,11 +668,11 @@ export class Game {
     const idx = this.scored();
     if (idx.length) this.ui.setAura(this.auraNow());
   }
-  auraNow() { return auraOf(this.scored().map((i) => this.scores[i] || 0), this.misses.size, this.minus()); }
+  auraNow() { return auraOf(this.scored().map((i) => this.scores[i] || 0), this.minus()); }
   feedback(r) {
     const s = this.s;
     const good = r.verdict === 'perfect' || r.verdict === 'good';
-    this.ui.stamp(r.score, good ? r.verdict : 'fail', r.verdict, !!this.tool.def.scored);
+    this.ui.stamp(r.score, good ? r.verdict : 'fail', r.verdict, !!this.tool.def.scored && !this.spare);
     this.audio.stamp();
     if (good) {
       this.audio.success();
@@ -626,6 +682,7 @@ export class Game {
       s.sqV += 1.6;
       if (r.verdict === 'perfect') {
         this.audio.perfect();
+        this.waiting.react('perfect');
         const c = headToStage(s, 0, -60);
         this.fx.hearts(c.x, c.y - 120, 3);
         for (let i = 0; i < 2; i++) this.fx.burst(c.x + rand(-160, 160), c.y + rand(-120, 120), 6, 220);
@@ -639,7 +696,7 @@ export class Game {
       s.tiltV += 2.2;
     }
     this.updateAura();
-    this.ui.stepDone(this.idx, good);
+    if (!this.spare) this.ui.stepDone(this.idx, good);
   }
   nextTool() {
     this.tool.exit();
@@ -664,6 +721,8 @@ export class Game {
       const h = headToStage(s, 0, -262);
       this.fx.text(h.x, h.y, lineFor(s.who, this.feel), bad ? '#ff7d9a' : '#ffffff', 30, 1.7);
     });
+    const feel = this.feel;
+    this.after(0.7, () => this.waiting.react(feel));
     if (bad) { this.audio.fail(); this.director.shake(this.feel === 'furious' ? 0.5 : 0.25); }
     else if (this.feel === 'meh') { s.sqV += 1.2; this.audio.boing(0.8); } // a shrug
     else {
@@ -686,7 +745,7 @@ export class Game {
     const idx = this.scored();
     const scores = idx.map((i) => this.scores[i] || 0);
     const minus = this.minus();
-    const aura = auraOf(scores, this.misses.size, minus);
+    const aura = auraOf(scores, minus);
     const { rank, next, toNext } = rankFor(aura);
     let worst = -1, ws = 101;
     scores.forEach((v, k) => { if (v < ws) { ws = v; worst = k; } });
@@ -702,6 +761,7 @@ export class Game {
     saveProgress(P);
     this.playables.save(P);
     this.playables.sendScore(P.best.reduce((a, b) => a + (b || 0), 0));
+    if (this.cloud) this.cloud.save(P);
     this.flash = 1;
     this.director.go(this.view(VIEWS.results), 1.2);
     // the face they leave with: how they feel about the job (set at the finale)
@@ -712,7 +772,6 @@ export class Game {
     this.ui.showResults({
       aura, rank: rank.name, next: next && next.name, toNext, near: !!next && toNext < 6, worst,
       bars: idx.map((i, k) => ({ icon: this.defs[i].icon, name: this.defs[i].name, score: scores[k] })),
-      order: { total: this.defs.length, misses: this.misses.size, penalty: this.misses.size * ORDER_PENALTY },
       pierce: { count: s.pierced.length, minus: pierceCost(s) },
       hurt: { list: this.hurtList, minus: this.hurtCost },
       say: { text: lineFor(s.who, this.feel), feel: this.feel },
@@ -730,7 +789,7 @@ export class Game {
     this.splitV = 0; this.splitUser = false;
     this.setMode('results');
   }
-  retry() { this.startLevel(this.level); } // the same patient, a fresh start
+  retry() { if (this.mode !== 'next') this.startLevel(this.level, { setup: this.setup }); } // the same patient, a fresh start
   // progress saved on the platform (another device) merges with the local copy
   mergeProgress(o) {
     const P = this.progress;
@@ -739,9 +798,21 @@ export class Game {
     saveProgress(P);
     if (this.mode === 'intro' || this.mode === 'results') this.ui.setLevel(this.level, P.unlocked);
   }
+  // "Next!": the camera turns to the waiting room, the front patient gets up and walks
+  // through, the rest move up a seat, and then the new patient hops into the chair. A
+  // pass moves on a level; a fail plays the same level with this new patient.
   nextLevel() {
-    if (!this.passed) return;
-    this.startLevel((this.level + 1) % LEVELS.length);
+    if (this.mode !== 'results') return;
+    const n = this.passed ? (this.level + 1) % LEVELS.length : this.level;
+    this.setMode('next');
+    this.timers = [];
+    this.ui.reset();
+    this.director.setObstruction(this.ui.obstruction('play'));
+    this.director.go(WAIT_VIEW, 0.75);
+    this.audio.whoosh(0.14);
+    let from = null;
+    this.after(0.75, () => { from = this.waiting.callNext(n); this.audio.boing(0.9); });
+    this.after(CALL, () => this.startLevel(n, from ? { from } : { avoid: [this.s.who.kind] }));
   }
   setSplit(v) { this.splitV = v; this.splitUser = true; }
   resize() {
@@ -757,8 +828,14 @@ export class Game {
     const m = this.mode;
     // with the kit open, presses land on the kit; only Space gets here (it closes the kit)
     if (this.ui.kitOpen) this.closeKit();
-    // waiting for a tool: a press anywhere opens the kit, Space takes the next treatment
-    if (m === 'intro' || m === 'arrive' || m === 'pick') { if (src === 'key') this.chooseNext(); else this.openKit(); return; }
+    // waiting for a tool: a press on the mouth says "aah" (a look at the teeth), anywhere
+    // else opens the kit; Space takes the next treatment
+    if (m === 'intro' || m === 'arrive' || m === 'pick') {
+      if (src === 'key') this.chooseNext();
+      else if (m === 'pick' && this.peek()) return;
+      else this.openKit();
+      return;
+    }
     if (m === 'style') { this.stylePress(src); return; }
     if (m === 'ready') this.press(src);
   }
@@ -771,7 +848,6 @@ export class Game {
       // a dropped hold (tab hidden, pause) or a quick tap does not count as a release
       if (src === 'cancel' || this.p < TAP_IGNORE) {
         tool.cancel(); tool.cur = -1; tool.p = 0; this.p = 0;
-        this.touched = this.tScores.length > 0; // a false start doesn't commit to this treatment
         if (src !== 'cancel') this.ui.toast('KEEP HOLDING!');
         this.setMode('ready');
         this.ui.holding(false);
@@ -782,8 +858,8 @@ export class Game {
     }
     if (m === 'brushing') { this.tool.lift(); this.setMode('ready'); this.ui.holding(false); return; }
     if (m === 'style') { this.style.down = false; this.style.last = null; return; }
-    // Space on the results screen: next level if it is unlocked, otherwise try again
-    if (m === 'results' && src === 'key' && this.modeT > 1.2) { if (this.passed) this.nextLevel(); else this.retry(); }
+    // Space on the results screen: the next patient
+    if (m === 'results' && src === 'key' && this.modeT > 1.2) this.nextLevel();
   }
 
   // ---------- per frame ----------
@@ -842,7 +918,7 @@ export class Game {
         tool.brush(dt, this.brushKey ? null : this.pointer());
         prog = tool.coverage();
         this.ui.setHold(prog, null, 1);
-        if (tool.complete()) this.finishTool(tool.result());
+        if (tool.complete() && !this.spare) this.finishTool(tool.result()); // a free use brushes on until put away
         break;
       }
       case 'outro':
@@ -866,6 +942,7 @@ export class Game {
     g.hint = this.mode === 'ready' && this.ghost; // first time: show where to press
     tickPatient(s, dt, time);
     if (this.mode === 'results') tickPatient(this.before, dt, time);
+    this.waiting.update(dt, time);
     if (tool && this.entered.has(tool) && this.mode !== 'finale' && this.mode !== 'results') tool.update(dt);
     // once glowing, the skin keeps twinkling
     if (s.shine >= 1 && this.mode !== 'boot') {

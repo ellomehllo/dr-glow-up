@@ -155,17 +155,15 @@ export class UI {
     this.el.lvls.classList.remove('pop'); void this.el.lvls.offsetWidth; this.el.lvls.classList.add('pop');
   }
 
-  // one badge per treatment of the level, in the order to do them; one that is new on
-  // this level gets a NEW tag
+  // one badge per treatment this patient needs (any order); one that is new on this
+  // level gets a NEW tag
   setSteps(defs, fresh = []) {
     const e = this.el;
     e.stepsList.innerHTML = defs.map((d, i) => `<li class="${fresh.includes(d.id) ? 'new' : ''}" aria-label="${i + 1}: ${d.name}">${ICONS[d.icon]}<i class="sn" aria-hidden="true">${i + 1}</i></li>`).join('');
     e.steps = [...e.stepsList.querySelectorAll('li')];
   }
-  // the badge to do next gets a marching ring (none: -1)
+  // the badge Space would pick next gets a marching ring (none: -1)
   markNext(i) { this.el.steps.forEach((li, k) => li.classList.toggle('next', k === i)); }
-  // a treatment done out of order
-  stepMiss(i) { const li = this.el.steps[i]; if (li) li.classList.add('miss'); }
   // the aura a level needs to pass, marked on the meter
   setPass(p) { this.el.pass.style.left = `${p}%`; }
   // info: { chapter, first (first level of a chapter), boss, fresh: [treatment defs] }
@@ -264,17 +262,16 @@ export class UI {
   }
 
   // ---------- the kit ----------
-  // list: [{ id, icon, name, state: need | now | done | none | locked, lv }]
+  // list: [{ id, icon, name, state: need | now | done | free | locked, lv }]
   // styles: [{ id, icon, name, state: style | now, dot: hair colour, tag: aura cost }]
   setKit(list, styles = []) {
     const e = this.el;
-    const label = { need: '', now: ', in use', done: ', done', none: ', nothing to fix' };
+    const label = { need: '', now: ', in use', done: ', done, use again', free: ', not needed, free to use' };
     e.slots.innerHTML = list.map((t, i) => {
       if (t.state === 'locked') {
         return `<li style="--i:${i}"><span class="slot locked" role="img" aria-label="Locked, opens at level ${t.lv}"><span class="lv">LV ${t.lv}</span></span></li>`;
       }
-      const off = t.state === 'done' ? ' disabled' : '';
-      return `<li style="--i:${i}"><button class="slot ${t.state}" data-ui data-id="${t.id}" type="button" aria-label="${t.name}${label[t.state]}"${off}>${ICONS[t.icon]}${t.state === 'done' ? `<i class="ok">${ICONS.check}</i>` : ''}</button></li>`;
+      return `<li style="--i:${i}"><button class="slot ${t.state}" data-ui data-id="${t.id}" type="button" aria-label="${t.name}${label[t.state]}">${ICONS[t.icon]}${t.state === 'done' ? `<i class="ok">${ICONS.check}</i>` : ''}</button></li>`;
     }).join('');
     e.styleSlots.innerHTML = styles.map((t, i) => {
       const say = `${t.name}${t.state === 'now' ? ', in use' : ''}${t.tag ? `, costs ${t.tag.slice(1)} aura` : ''}`;
@@ -387,7 +384,7 @@ export class UI {
         <span class="rb-ico">${ICONS[b.icon]}</span>
         <span class="rb-bar"><i style="--s:${(b.score / 100).toFixed(3)};animation-delay:${(0.5 + i * 0.07).toFixed(2)}s"></i></span>
         <span class="rb-sc">${b.score}</span>
-      </li>`).join('') + this.orderRow(r.order, r.bars.length) + this.hurtRow(r.hurt) + this.pierceRow(r.pierce);
+      </li>`).join('') + this.hurtRow(r.hurt) + this.pierceRow(r.pierce);
     // what the patient says about it
     e.rsSay.textContent = r.say ? r.say.text : '';
     e.rsSay.dataset.feel = r.say ? r.say.feel : '';
@@ -395,25 +392,15 @@ export class UI {
     const unlock = r.unlock || [];
     e.rsNew.innerHTML = unlock.map((d) => `<span class="rs-nw" aria-label="Unlocked: ${d.name}"><b>NEW</b><span class="sp-ico">${ICONS[d.icon]}</span></span>`).join('');
     e.rsNew.hidden = !unlock.length;
-    e.next.disabled = !r.passed;
-    e.next.innerHTML = r.passed ? ICONS.next : ICONS.lock;
+    // passed or not, the arrow brings in the next patient (a fail: the same level again)
+    e.next.disabled = false;
+    e.next.innerHTML = ICONS.next;
+    e.next.setAttribute('aria-label', r.passed ? 'Next level' : 'Next patient');
     e.results.classList.toggle('passed', r.passed);
     e.range.value = '0';
     e.results.classList.remove('in'); void e.results.offsetWidth;
     e.results.classList.add('in');
     e.ba.classList.add('in');
-  }
-  // results: how many treatments were done in order, and what the rest cost
-  orderRow(o, k) {
-    if (!o) return '';
-    const right = o.total - o.misses;
-    const label = o.misses ? `Order: ${right} of ${o.total} in order, minus ${o.penalty}` : 'Order: all in order';
-    return `
-      <li class="order${o.misses ? ' miss' : ''}" aria-label="${label}">
-        <span class="rb-ico">${ICONS.order}</span>
-        <span class="rb-bar"><i style="--s:${(right / o.total).toFixed(3)};animation-delay:${(0.5 + k * 0.07).toFixed(2)}s"></i></span>
-        <span class="rb-sc">${o.misses ? `-${o.penalty}` : ICONS.check}</span>
-      </li>`;
   }
   // results: what hurting the patient cost (one mark per hurt, a bigger one for an eye)
   hurtRow(h) {

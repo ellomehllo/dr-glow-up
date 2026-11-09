@@ -18,12 +18,17 @@ export class TeethTool extends Tool {
     const onLamp = this.pos && Math.hypot(hx - this.pos.x, hy - this.pos.y - 50) <= Math.max(50, minR);
     return onMouth || onLamp ? 0 : -1;
   }
+  fixed() { return this.g.s.teeth >= 0.95; }
   enter() {
     super.enter();
-    const s = this.g.s;
     this.segs = makeGuide([{ pts: LINE, t0: 0, t1: 1 }]);
     this.pos = guideAt(this.segs, 0);
-    // say cheese: the grin stays on for the whole treatment
+    this.cheese();
+  }
+  resume() { super.resume(); this.cheese(); }
+  // say cheese: the grin stays on for the whole treatment
+  cheese() {
+    const s = this.g.s;
     this.prevMouth = s.mouthBase;
     s.mouthBase = 'grin';
     this.g.react('normal', 0.01, 'grin');

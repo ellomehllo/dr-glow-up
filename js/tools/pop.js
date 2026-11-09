@@ -11,6 +11,7 @@ export class PopTool extends Tool {
   reset() { super.reset(); this.k = 0; }
   targets() { return this.g.s.pimples; }
   hitR(t) { return t.r * 1.8 + 16; }
+  fixed(i) { return this.g.s.pimples[i].popped; }
   enter() { super.enter(); this.k = 0; this.g.s.lookAt = { x: 0, y: 40 }; }
   begin(i) {
     const pm = this.g.s.pimples[i];

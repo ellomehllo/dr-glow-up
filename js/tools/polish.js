@@ -10,6 +10,7 @@ export class PolishTool extends Tool {
   reset() { super.reset(); this.acc = 0; this.pos = { x: -60, y: -40 }; this.rubbing = false; this.fly = 0; }
   targets() { return [{ x: 0, y: 0, r: 210 }]; }
   hitTest(hx, hy) { return !this.done[0] && onFace(hx, hy, 36) ? 0 : -1; }
+  fixed() { return this.g.s.shine >= 1; }
   enter() { super.enter(); }
   begin() { this.rubbing = true; }
   hold(dt, p) {

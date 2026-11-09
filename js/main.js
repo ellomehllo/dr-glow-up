@@ -4,6 +4,7 @@ import { HoldInput } from './input.js';
 import { Sound } from './audio.js';
 import { UI } from './ui.js';
 import { Playables } from './playables.js';
+import { Cloud } from './cloud.js';
 import { Game } from './game.js';
 import { Director } from './camera.js';
 import { Backdrop } from './backdrop.js';
@@ -20,6 +21,7 @@ const audio = new Sound();
 const qs = new URLSearchParams(location.search);
 if (qs.has('debug') && !qs.has('sound')) { audio.init = () => {}; audio.muted = true; }
 const playables = new Playables();
+const cloud = new Cloud();
 const input = new HoldInput(document.body);
 let game = null;
 
@@ -48,8 +50,14 @@ playables.onAudioChange((on) => audio.setPlatformAudio(on));
 if (document.fonts && document.fonts.load) document.fonts.load('700 32px Fredoka').catch(() => {});
 
 const director = new Director(VIEWS.intro);
-game = new Game({ ui, audio, input, fx: new FX(), dirt: new Dirt(), director, backdrop: new Backdrop(), playables });
+game = new Game({ ui, audio, input, fx: new FX(), dirt: new Dirt(), director, backdrop: new Backdrop(), playables, cloud });
 window.__game = game;
+// progress carried over from the game's old address (index.html forwards it here)
+const carry = /[#&]carry=([^&]*)/.exec(location.hash);
+if (carry) {
+  try { game.mergeProgress(JSON.parse(decodeURIComponent(carry[1]))); } catch { /* not a save */ }
+  history.replaceState(null, '', location.pathname + location.search);
+}
 
 // ---------- sizing and adaptive resolution ----------
 let W = 1, H = 1, dpr = 1;
@@ -84,6 +92,11 @@ function afterFirstFrame() {
   window.__firstFrameMs = performance.now() - T0;
   playables.firstFrameReady();
   playables.load().then((saved) => { if (saved && typeof saved === 'object') game.mergeProgress(saved); }).finally(() => playables.gameReady());
+  // the cloud save: merge it in, then send up anything this browser has that it lacks
+  cloud.load().then((saved) => {
+    if (saved) game.mergeProgress(saved);
+    if (cloud.session) cloud.save(game.progress);
+  });
 }
 function step(dt) {
   time += dt;

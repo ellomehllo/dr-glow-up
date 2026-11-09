@@ -1,4 +1,6 @@
-// Patients: every level has its own patient (patientFor), the same one on every retry.
+// Patients: the first patient of a session is the level's own (patientFor); after that
+// they come in from the waiting room, each a new random character (pickKind) who keeps
+// their look on a retry.
 // Ten characters (goth, bodybuilder, bookworm, brainiac, foodie, punk, bully, gamer,
 // glam, grandpa) plus regular patients in a clinic gown, dealt down the levels from a
 // shuffled deck so everyone shows up before anyone repeats, and never the same kind
@@ -170,6 +172,12 @@ export const kindFor = (level) => SEQ[level % SEQ.length];
 export function patientFor(level, kind = kindFor(level)) {
   R = seeded(level * 7717 + 31);
   try { return randomPatient(kind); } finally { R = Math.random; }
+}
+
+// a kind of patient other than the ones in `avoid` (regular patients can repeat)
+export function pickKind(avoid = []) {
+  const open = KINDS.filter((k) => !avoid.includes(k));
+  return Math.random() < 0.18 || !open.length ? 'regular' : open[(Math.random() * open.length) | 0];
 }
 
 export function randomPatient(kind = pick(PATIENT_KINDS)) {

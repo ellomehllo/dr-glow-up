@@ -24,6 +24,7 @@ export class NoseTool extends Tool {
     const c = mid(sizeOf(this.g.s.nose));
     return Math.hypot(hx - c.x, hy - c.y) <= Math.max(84, minR) ? 0 : -1;
   }
+  fixed() { return this.g.s.nose >= 0.9; }
   enter() { super.enter(); this.reset(); this.g.s.lookAt = { x: 0, y: 40 }; }
   begin() { this.g.react('normal', 99, 'flat'); this.oinked = false; }
   hold(dt, p) {

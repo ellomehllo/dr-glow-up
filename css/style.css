@@ -299,7 +299,8 @@ button { font: inherit; color: inherit; }
 /* the treatment already under way */
 .slot.now { background: var(--gold); outline: 3px dashed var(--ink); outline-offset: 4px; }
 /* finished on this patient */
-.slot.done { background: var(--mint); cursor: default; transform: translateY(2px); box-shadow: 0 2px 0 var(--ink); }
+.slot.done { background: var(--mint); transform: translateY(2px); box-shadow: 0 2px 0 var(--ink); }
+.slot.free { background: #ffffff; }
 .slot .ok {
   position: absolute; top: -7px; right: -7px; width: 26px; height: 26px; border-radius: 50%;
   display: grid; place-items: center; background: var(--paper); border: 2px solid var(--ink);

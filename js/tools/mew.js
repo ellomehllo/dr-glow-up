@@ -10,6 +10,7 @@ export class MewTool extends Tool {
   targets() { return [{ x: 0, y: 60, r: 260 }]; }
   // anywhere on the patient: head, neck or body
   hitTest(hx, hy, sx, sy) { return !this.done[0] && Math.abs(sx) < 300 && sy > headY(this.g.s) - 230 ? 0 : -1; }
+  fixed() { return this.g.s.mew >= 0.9; }
   enter() { super.enter(); this.g.s.lookAt = { x: 0, y: -60 }; }
   begin() { this.g.react('normal', 99, 'flat'); }
   hold(dt, p) {

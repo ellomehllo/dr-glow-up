@@ -8,6 +8,7 @@ import { CURLS, CAP, tuftKept, drawHair, drawBackHair } from './hair.js';
 import { drawBody, drawNeck, drawBehind } from './outfits.js';
 import { mix } from './people.js';
 import { hairNow, drawPierced } from './style.js';
+import { makeDent, drawDebris, drawWorms, drawOwn, drawTeeth, AAH, OWN_PIERCINGS } from './extras.js';
 
 export { INK, CURLS };
 export const CAP_PATH = CAP;
@@ -141,6 +142,12 @@ export function makeState(setup = DEFAULT_SETUP) {
     // wrinkles: how far the iron has run along each (0..1.25) and the red mark of an overdone one
     wrk: (st.wrinkles || []).map((w) => ({ ...w, f: 0, red: 0 })),
     strays: [], // stray hairs painted onto the face by a sloppy brush (head space)
+    // extras (extras.js): debris in the hair, worms, the patient's own piercings (each
+    // with how far the tweezers have pulled it), and the teeth
+    debris: (st.debris || []).map((d) => ({ ...d, pull: 0, gone: false })),
+    worms: (st.worms || []).map((w) => ({ ...w, pull: 0, gone: false })),
+    own: (st.own || (st.who && st.who.piercings ? OWN_PIERCINGS : [])).map((p) => ({ ...p, pull: 0, gone: false })),
+    dent: makeDent(st.dent),
     dye: null, pierced: [], // style tools (style.js): hair dye in progress, piercings added
     // hurts (mood.js): marks left where a tool hurt the skin, and per eye: how red it is,
     // how long it stays squeezed shut, how much it is watering
@@ -221,6 +228,7 @@ export function tickPatient(s, dt, time) {
     if (s.tears[i] > 0) s.tears[i] = Math.max(0, s.tears[i] - dt * 0.22);
   }
   for (const h of s.hurts) h.t += dt;
+  for (const d of s.dent) if (d.gone && d.grow < 1.6) d.grow += dt * 1.6; // a new tooth grows in
   const kf = 1 - Math.exp(-dt * 4);
   s.angerV += (s.anger - s.angerV) * kf; s.cryV += (s.cry - s.cryV) * kf; s.boredV += (s.bored - s.boredV) * kf;
 }
@@ -514,6 +522,21 @@ function drawMouth(ctx, s, time) {
     ctx.lineWidth = 3.4; ctx.strokeStyle = T.mouth; ctx.stroke(p);
     return;
   }
+  if (kind === 'aah') { // wide open for the dentist: both rows of teeth and the tongue
+    const t = s.teeth, over = clamp01((t - 1) / 0.4);
+    const base = t >= 1 ? mix('#ffffff', '#d8f3ff', over) : mix('#e2b948', '#ffffff', smooth(clamp01(t)));
+    ctx.fillStyle = '#7a2535'; ctx.fill(AAH);
+    ctx.save(); ctx.clip(AAH);
+    ell(ctx, 0, 112, 60, 14); ctx.fillStyle = '#e86a83'; ctx.fill(); // gums
+    ell(ctx, 0, 176, 60, 26); ctx.fill();
+    ell(ctx, 0, 160, 28, 14); ctx.fillStyle = '#ff8fa8'; ctx.fill(); // tongue
+    ctx.strokeStyle = 'rgba(122,37,53,0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 150); ctx.lineTo(0, 162); ctx.stroke();
+    drawTeeth(ctx, s, base, time);
+    ctx.restore();
+    soft(ctx, 0, 180, 30, 7, lip, paint ? 0.7 : 0.45); // the lower lip
+    ctx.strokeStyle = T.mouth; ctx.lineWidth = 3.4; ctx.stroke(AAH);
+    return;
+  }
   if (kind === 'sob') { // a wobbling, wailing open frown
     const wob = Math.sin((time || 0) * 15) * 2.5;
     const p = new Path2D(`M -32 ${134 + wob} Q 0 ${96 - wob} 32 ${134 + wob} Q 0 ${142 + wob} -32 ${134 + wob} Z`);
@@ -669,13 +692,6 @@ function drawGlasses(ctx, kind, e) {
   }
   ctx.lineWidth = kind === 'round' ? 4 : 5.5; ctx.strokeStyle = INK;
   ctx.beginPath(); ctx.moveTo(-(EYE.x - R), y - 2); ctx.quadraticCurveTo(0, y - 14, EYE.x - R, y - 2); ctx.stroke();
-}
-function silverDot(ctx, x, y, r) { ell(ctx, x, y, r, r); ctx.fillStyle = '#dfe3ee'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = INK; ctx.stroke(); }
-function drawPiercings(ctx) {
-  ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.arc(15, 84, 7, -0.4, Math.PI * 1.15);
-  ctx.lineWidth = 6.5; ctx.strokeStyle = INK; ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = '#dfe3ee'; ctx.stroke();
-  silverDot(ctx, 84, -54, 4.5); silverDot(ctx, 88, -20, 4.5);
 }
 function drawMustache(ctx, w) {
   const p = new Path2D('M 0 96 C -18 86 -46 88 -60 108 C -46 104 -30 112 -16 110 C -8 109 -2 106 0 104 C 2 106 8 109 16 110 C 30 112 46 104 60 108 C 46 88 18 86 0 96 Z');
@@ -892,7 +908,8 @@ function drawHead(ctx, s, time, dirtImg) {
   if (s.angerV > 0.45) drawVein(ctx, s, time);
   drawNose(ctx, w.nose, s.nose, sk);
   if (w.glasses) drawGlasses(ctx, w.glasses, w.eyeSize || 1);
-  if (w.piercings) drawPiercings(ctx);
+  drawOwn(ctx, s);
+  if (s.worms.length) drawWorms(ctx, s, time);
   if (w.mole && !w.mustache) { ell(ctx, w.mole * 48, 104, 4.5, 4.5); ctx.fillStyle = '#4a2a24'; ctx.fill(); }
   drawMouth(ctx, s, time);
   if (w.mustache) drawMustache(ctx, w);
@@ -901,6 +918,7 @@ function drawHead(ctx, s, time, dirtImg) {
   if (w.cheeks) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; for (const side of [-1, 1]) { ell(ctx, side * 90 - 6, 56, 9, 5, -0.3); ctx.fill(); } }
   drawHair(ctx, s);
   drawPierced(ctx, s);
+  if (s.debris.length) drawDebris(ctx, s, time);
   if (dirtImg && s.dirtAlpha > 0) {
     ctx.globalAlpha = s.dirtAlpha;
     ctx.drawImage(dirtImg, DIRT_BOX.x, DIRT_BOX.y, DIRT_BOX.w, DIRT_BOX.h);
@@ -951,7 +969,7 @@ export function drawPatient(ctx, s, time, dirtImg) {
   try { drawPatientNow(ctx, s, time, dirtImg); } finally { w.hair = c; w.hairHi = hi; }
 }
 function drawPatientNow(ctx, s, time, dirtImg) {
-  drawChair(ctx);
+  if (!s.noChair) drawChair(ctx); // the waiting room draws patients on a bench
   if (s.glow > 0.01) {
     const g = G(ctx);
     ctx.save(); ctx.translate(0, headY(s) + 30); ctx.scale(330, 330);

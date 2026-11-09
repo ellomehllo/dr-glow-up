@@ -195,6 +195,58 @@ export const TOOL_ART = {
     <circle cx="40.6" cy="15" r="2.5" fill="#e3e8f4" stroke-width="2"/>
     ${sparkle(8.5, 11, 5)}${sparkle(6, 38, 3, '#fff', 1.5)}`, 'pierce'),
 
+  // tweezers: silver tweezers pulling a leaf
+  tweezers: art(`
+    <g transform="rotate(-38 14 32)">
+      <path d="M6.5 30c3.5-4.5 10.5-6 16-3.5c-4 4.5-11 6-16 3.5z" fill="#6fd35a"/>
+      <path d="M8.5 29.5c4-1.4 8.5-2 12.5-2.6" stroke-width="1.6" stroke="#2f8a3a"/>
+    </g>
+    <path d="M19.5 28.5L41 7.5l3 3L22.5 31z" fill="#e3e8f4"/>
+    <path d="M17 26L36 3.5l3.4 2.6L20 28.6z" fill="#e3e8f4"/>
+    <path d="M30 13.5l2.4 2.2M33 10.2l2.4 2.2" stroke-width="1.8"/>
+    <rect x="37" y="2" width="9" height="7" rx="3" transform="rotate(45 41.5 5.5)" fill="#ffc93c" stroke-width="2.2"/>
+    ${sparkle(9, 9, 4.5)}`, 'tweezers'),
+
+  // brush teeth: a toothbrush with foam on its bristles
+  toothbrush: art(`
+    <path d="M19 27L40 42" stroke-width="9"/>
+    <path d="M19 27L40 42" stroke="#45c8ff" stroke-width="4.6"/>
+    <path d="M24 28.5l12 8.5" stroke="#fff" stroke-width="1.6" opacity=".6"/>
+    <g transform="rotate(36 14 21)">
+      <rect x="4" y="22" width="22" height="6.5" rx="3" fill="#45c8ff"/>
+      <g stroke-width="1.6"><rect x="5.5" y="14" width="3.6" height="8" rx="1.5" fill="#ff9fc4"/><rect x="10.2" y="14" width="3.6" height="8" rx="1.5" fill="#fff"/><rect x="14.9" y="14" width="3.6" height="8" rx="1.5" fill="#ff9fc4"/><rect x="19.6" y="14" width="3.6" height="8" rx="1.5" fill="#fff"/></g>
+    </g>
+    <g fill="#fff" stroke-width="1.8"><circle cx="9" cy="9.5" r="4.4"/><circle cx="16" cy="6.5" r="3.4"/><circle cx="5" cy="15.5" r="2.6"/></g>
+    ${sparkle(40, 10, 5)}`, 'toothbrush'),
+
+  // fill cavities: a dentist's drill at a tooth
+  drill: art(`
+    <g transform="translate(3 4) scale(.82)" stroke-width="3">
+      <path d="${TOOTH}" fill="#fff"/>
+      <ellipse cx="12.3" cy="9.5" rx="2.6" ry="2.2" fill="#3a2747" stroke="none"/>
+    </g>
+    <path d="M16 15.5l5-4" stroke-width="4.4"/>
+    <path d="M16 15.5l5-4" stroke="#e3e8f4" stroke-width="1.8"/>
+    <rect x="19" y="5.5" width="10" height="8" rx="3" fill="#e3e8f4" stroke-width="2.4"/>
+    <path d="M27 11.5L35 23l8 18" stroke-width="9.5"/>
+    <path d="M27 11.5L35 23l8 18" stroke="#b9a6ff" stroke-width="5"/>
+    <circle cx="35" cy="23" r="2.6" fill="#ffc93c" stroke-width="1.8"/>
+    <g stroke-width="1.8"><path d="M8 34.5l-3 2.5M12 37l-1 3.6M5 30l-3.4.6"/></g>`, 'drill'),
+
+  // pull a bad tooth: pliers gripping a brown tooth
+  pliers: art(`
+    <g transform="translate(13 2) scale(.9)" stroke-width="2.8">
+      <path d="${TOOTH}" fill="#c49a56"/>
+      <ellipse cx="9" cy="10.5" rx="2.6" ry="2.2" fill="#6b4c24" stroke="none"/>
+    </g>
+    <path d="M17 12q-3 6 3 12l-3 13q-1.8 4.5-.6 9" stroke-width="7"/>
+    <path d="M17 12q-3 6 3 12l-3 13q-1.8 4.5-.6 9" stroke="#e3e8f4" stroke-width="3"/>
+    <path d="M33 12q3 6-3 12l3 13q1.8 4.5.6 9" stroke-width="7"/>
+    <path d="M33 12q3 6-3 12l3 13q1.8 4.5.6 9" stroke="#e3e8f4" stroke-width="3"/>
+    <path d="M17 36q-1.6 4.6-.6 9.5M33 36q1.6 4.6.6 9.5" stroke="#ff6fae" stroke-width="3.4"/>
+    <circle cx="25" cy="25.5" r="3.2" fill="#e3e8f4" stroke-width="2.2"/>
+    ${sparkle(6, 9, 4.5)}`, 'pliers'),
+
   // the kit itself: a doctor's bag
   kit: art(`
     <path d="M17 13.5V10a3.5 3.5 0 0 1 3.5-3.5h7A3.5 3.5 0 0 1 31 10v3.5" stroke-width="5.6"/>

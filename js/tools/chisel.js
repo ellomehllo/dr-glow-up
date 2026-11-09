@@ -22,6 +22,7 @@ export class ChiselTool extends Tool {
     const onRoller = this.pos && Math.hypot(hx - this.pos.x, hy - this.pos.y) <= Math.max(70, minR);
     return onJaw || onRoller ? 0 : -1;
   }
+  fixed() { return this.g.s.jaw >= 0.6; }
   enter() {
     super.enter();
     // the stretch after the sweet zone reads as "too far": drawn pink by the guide

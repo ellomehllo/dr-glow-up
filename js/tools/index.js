@@ -12,6 +12,8 @@ import { CirclesTool } from './circles.js';
 import { LaserTool } from './laser.js';
 import { TeethTool } from './teeth.js';
 import { IronTool } from './iron.js';
+import { TweezeTool } from './tweeze.js';
+import { BrushTeethTool, DrillTool, PliersTool } from './dental.js';
 
 export const REGISTRY = {
   scrub: ScrubTool,
@@ -26,4 +28,8 @@ export const REGISTRY = {
   laser: LaserTool,
   teeth: TeethTool,
   iron: IronTool,
+  tweeze: TweezeTool,
+  tbrush: BrushTeethTool,
+  drill: DrillTool,
+  pliers: PliersTool,
 };

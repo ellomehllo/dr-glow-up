@@ -23,6 +23,7 @@ export class GoldTool extends Tool {
     });
     return best;
   }
+  fixed(i) { return this.g.s.scarH[i] >= 1; }
   enter() { super.enter(); this.g.s.lookAt = { x: 40, y: -200 }; this.tube = null; }
   // stage-space point at fraction f along scar i
   front(i, f) {
