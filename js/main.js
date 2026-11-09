@@ -34,7 +34,7 @@ const ui = new UI(document.getElementById('ui'), {
   onKit: () => game && game.openKit(),
   onKitPick: (id) => !!game && game.choose(id),
   onKitClose: () => game && game.closeKit(),
-  onDye: (id) => game && game.pickDye(id),
+  onSwatch: (id) => game && game.pickSwatch(id),
   onStyleDone: () => game && game.endStyle(),
   onUnlockPlay: () => game && game.nextLevel(),
 });
@@ -150,6 +150,12 @@ if (qs.has('debug')) {
         const tool = game.tools[game.defs.findIndex((d) => d.id === id)];
         waitFor(['intro', 'arrive', 'pick']);
         game.choose(id);
+        if (!tool) { // the wish: styled just as asked
+          if (stopAt === id) return game.mode;
+          game.autoStyle(); game.endStyle();
+          waitFor(['pick', 'finale', 'results']);
+          continue;
+        }
         waitFor(['ready']);
         const def = tool.def;
         if (stopAt === def.id) return game.mode;

@@ -309,3 +309,25 @@
   .rs-rank { font-size: 17px; }
   .rs-aura b { font-size: 38px; }
 }
+
+/* ---------- style wishes ---------- */
+/* the wish's badge: the colour they want, or a little tag (gem count, piercing spot) */
+.steps li .dot {
+  position: absolute; left: -5px; top: -5px; width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid transparent; background: var(--c); box-shadow: 0 0 0 2px #fff, 0 2px 5px rgba(58, 39, 71, .25);
+}
+.steps li .tag {
+  position: absolute; left: -10px; top: -7px; height: 16px; padding: 0 5px; border-radius: 8px;
+  font-style: normal; font-size: 9px; font-weight: 700; line-height: 16px; letter-spacing: .04em; color: #fff;
+  border: 1px solid transparent; background: #f0507f; box-shadow: 0 0 0 2px #fff;
+}
+.steps li.wish { background: #ffe6f1; }
+/* the swatch they asked for: a small heart-pink ring under it */
+.sw.want::after {
+  content: ''; position: absolute; left: 50%; bottom: -9px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%;
+  background: #f0507f; box-shadow: 0 0 0 1.5px #fff;
+}
+.sw { position: relative; }
+/* the kit's style row: the wish glows like a needed treatment, done gets the check */
+.slot.style.need { background: #ffe6f1; box-shadow: 0 0 0 2px var(--pink), 0 6px 14px rgba(255, 116, 177, .3); }
+.slot.style.done { background: #dcf9f0; box-shadow: 0 0 0 1.5px rgba(79, 220, 182, .75); }

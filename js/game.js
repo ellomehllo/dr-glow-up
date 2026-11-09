@@ -19,20 +19,22 @@
 // targets are done. Brush treatments (wash, hair) are dragged over the patient instead.
 // Then the finale (happy hops, sparkle shower, camera flash) and the results screen
 // with a before/after split. Treatments only react through the hooks in tools/base.js.
-// Style tools (hair colour, piercings; style.js) sit in their own row of the kit: picked
-// between treatments, they put the game in `style` until the player is done, and stay
-// out of the order. Piercings cost aura.
+// Style tools (hair colour, lipstick, blush, piercings, face gems; style.js) sit in their
+// own row of the kit and unlock by level like treatments. A patient can ask for a look (a
+// wish): it joins their order before the glow and scores by how close the result is when
+// the player taps done. Picked otherwise they are free to play with; piercings nobody
+// asked for cost aura.
 // A treatment pressed where there is nothing to treat hurts the patient there (mood.js):
 // a mark, an ouch in their own words, and aura; an eye hurts most. At the end the patient
 // takes the job by the aura and the hurts, in their own temper: happy hops for a good job,
 // anger, tears, a cold shoulder or grumbling for a bad one.
-import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES } from './config.js';
+import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES, STYLE_IDS } from './config.js';
 import { REGISTRY } from './tools/index.js';
 import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress } from './scoring.js';
 import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, onFace, eyeSide, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
 import { patientFor, randomPatient, pickKind } from './people.js';
 import { rollExtras, inMouth } from './extras.js';
-import { DYES, DYE_RUB, setDye, hairNow, onHair, pierceSpot, pierceCost, PIERCE } from './style.js';
+import { PALETTES, swatchesFor, setPaint, paintNow, onPaint, rubLength, pierceSpot, pierceCost, PIERCE, GEMS, SPOT_AT, rollWish, wishLine, wishPrompt, touched, wishScore } from './style.js';
 import { HURT, HURT_KIND, temperOf, lineFor, feelingFor, faceFor, BAD } from './mood.js';
 import { easeIO, rand, TAU, shuffle } from './draw.js';
 import { WaitingRoom, DOOR } from './waiting.js';
@@ -97,8 +99,8 @@ export class Game {
     this.entered = new Set();
     this.used = new Set(); // treatments (index into defs) finished on this patient
     this.tool = null; this.idx = -1;
-    this.style = null; // the style tool out: { def, down, last } (style mode)
-    this.dyeId = 'pink'; // the dye picked last
+    this.style = null; // the style tool out: { def, i, down, last, rub } (style mode; i: its place in the order, or -1)
+    this.swatch = { dye: 'pink', lips: 'red', blush: 'pink' }; // the colour picked last, per tool
     this.clearHurts();
     this.seenHint = new Set();
     this.mode = 'boot';
@@ -129,10 +131,16 @@ export class Game {
     const ex = rollExtras({ open: (id) => INTRO[id] <= level, must: L.extra, who, carry: from });
     // only some come in muddy and need a wash (always on the first level, to learn it)
     const muddy = from ? from.dirt > 0 : level === 0 || Math.random() < 0.3;
+    // a look they want: the style tool this level brings in, or now and then (always for a
+    // boss) one already open; a waiting-room patient keeps the one they came with
+    const open = STYLE_IDS.filter((id) => INTRO[id] <= level);
+    let wish = from && from.wish && INTRO[from.wish.id] <= level ? from.wish : null;
+    if (L.style) wish = wish && wish.id === L.style ? wish : rollWish(L.style);
+    else if (!wish && open.length && (L.boss || Math.random() < 0.45)) wish = rollWish(open[(Math.random() * open.length) | 0]);
     const mid = L.tools.slice(1, -1);
     return {
-      level, who, pimples, ...ex,
-      tools: [...(muddy ? ['scrub'] : []), ...mid, ...ex.extras, L.tools[L.tools.length - 1]], // the glow stays last
+      level, who, pimples, ...ex, wish,
+      tools: [...(muddy ? ['scrub'] : []), ...mid, ...ex.extras, ...(wish ? [wish.id] : []), L.tools[L.tools.length - 1]], // the glow stays last
       cracks: has('gold') ? some(CRACKS, L.scars) : [],
       spots: has('laser') ? pickSpots(L.spots, pimples) : [],
       wrinkles: has('iron') ? some(WRINKLES, L.wrinkles) : [],
@@ -152,16 +160,18 @@ export class Game {
     const L = LEVELS[n];
     return {
       chapter: L.chapter + 1, first: n % CHAPTER_SIZE === 0, boss: L.boss, pass: L.pass,
-      fresh: L.fresh.map((id) => TOOLS.find((t) => t.id === id)),
+      fresh: L.fresh.map((id) => BY_ID[id] || STYLE_BY_ID[id]),
     };
   }
-  // the patient's treatments (the level's and their extras) with the level's difficulty
+  // the patient's treatments (the level's, their extras and their wish) with the level's
+  // difficulty; a wish has no tool object (style mode runs it)
   buildTools() {
     this.defs = this.setup.tools.map((id) => this.defFor(id));
-    this.tools = this.defs.map((def) => new REGISTRY[def.id](this.g, def));
+    this.tools = this.defs.map((def) => (def.style ? null : new REGISTRY[def.id](this.g, def)));
   }
-  // a treatment with the level's difficulty applied
+  // a treatment with the level's difficulty applied, or the patient's wish
   defFor(id) {
+    if (STYLE_BY_ID[id]) return { ...STYLE_BY_ID[id], style: true, scored: true, wish: this.setup.wish, prompt: wishPrompt(this.setup.wish) };
     const L = LEVELS[this.level], base = BY_ID[id];
     // each target nudges its own sweet centre by up to `jitter` (see Tool.enter)
     const def = { ...base, hold: { ...base.hold, time: base.hold.time / L.speed }, jitter: base.fixed ? 0 : L.jitter };
@@ -185,6 +195,7 @@ export class Game {
     this.ui.setPass(LEVELS[this.level].pass);
     this.refreshKit();
     this.ui.titleCard(true);
+    this.sayWish(2.6);
     react(this.s, 'normal', 0.01);
   }
 
@@ -204,13 +215,21 @@ export class Game {
       return { id, icon: t.icon, name: t.name, state, lv: INTRO[id] + 1 };
     });
   }
-  // the style row of the kit: the one out, the colour the hair has, what piercings cost
+  // the style row of the kit: locked until its level, the wish (need, then done), the one
+  // out, the colour each colour tool shows now, what piercings cost
   styleKit() {
-    const s = this.s, cost = pierceCost(s);
-    return STYLES.map((d) => ({
-      id: d.id, icon: d.icon, name: d.name, state: this.style && this.style.def.id === d.id ? 'now' : 'style',
-      dot: d.id === 'dye' && s.dye ? hairNow(s).c : '', tag: d.id === 'pierce' && cost ? `-${cost}` : '',
-    }));
+    const s = this.s, cost = pierceCost(s), i = this.defs.findIndex((d) => d.style);
+    return STYLES.map((d) => {
+      let state = 'style';
+      if (!this.isOpen(d.id)) state = 'locked';
+      else if (this.style && this.style.def.id === d.id) state = 'now';
+      else if (i >= 0 && this.defs[i].id === d.id) state = this.used.has(i) ? 'done' : 'need';
+      const paint = PALETTES[d.id] && paintNow(s, d.id);
+      return {
+        id: d.id, icon: d.icon, name: d.name, state, lv: INTRO[d.id] + 1,
+        dot: paint && paint.a > 0.05 ? paint.c : '', tag: d.id === 'pierce' && cost ? `-${cost}` : '',
+      };
+    });
   }
   refreshKit() { this.ui.setKit(this.kit(), this.styleKit()); }
   // a tool can be picked whenever the finger is up: between treatments, or halfway
@@ -238,8 +257,8 @@ export class Game {
   // a slot in the kit was picked: start that treatment, or say why not (returns false)
   choose(id) {
     if (!this.canPick()) return false;
-    if (STYLE_BY_ID[id]) return this.chooseStyle(id);
     if (!this.isOpen(id)) return false;
+    if (STYLE_BY_ID[id]) return this.chooseStyle(id);
     const i = this.defs.findIndex((d) => d.id === id);
     if (this.tool && this.tool.def.id === id) { this.closeKit(); return true; } // the one already out
     if (this.tool) this.tool.exit(); // left as it is, to carry on later
@@ -249,43 +268,71 @@ export class Game {
     return true;
   }
 
+  // the patient asks for their look as they sit down
+  sayWish(at) {
+    const w = this.setup.wish;
+    if (!w) return;
+    this.after(at, () => {
+      const h = headToStage(this.s, 0, -262);
+      this.fx.text(h.x, h.y, wishLine(w), '#ffffff', 26, 1.6);
+    });
+  }
   // ---------- style tools ----------
   chooseStyle(id) {
     const def = STYLE_BY_ID[id];
     if (this.style && this.style.def === def) { this.closeKit(); return true; }
     if (this.tool) { this.tool.exit(); this.tool = null; this.idx = -1; } // left as it is, to carry on later
+    this.endStyle(false);
     this.ui.closeKit();
-    this.style = { def, down: false, last: null, rub: 0 };
-    const s = this.s;
-    if (id === 'dye' && !(s.dye && s.dye.id === this.dyeId)) setDye(s, DYES.find((d) => d.id === this.dyeId));
+    // the patient's wish (not yet scored) is in their order; anything else is a free play
+    const i = this.defs.findIndex((d, k) => d.id === id && !this.used.has(k));
+    const wish = i >= 0 ? this.defs[i].wish : null;
+    this.style = { def, i, down: false, last: null, rub: 0 };
+    const s = this.s, colour = !!PALETTES[id];
+    if (colour && !(s[id] && s[id].id === this.swatch[id])) setPaint(s, id, this.swatch[id]);
     s.lookAt = null;
     this.director.go(this.view(def.view), TRANSITION);
     this.director.setObstruction(this.ui.obstruction('play'));
     this.ui.titleCard(false);
     this.ui.showStyle(def, {
-      dyes: id === 'dye' ? DYES.map((d) => ({ id: d.id, name: d.name, c: d.c || s.who.hair, hi: d.hi || s.who.hairHi })) : null,
-      on: this.dyeId, t: id === 'dye' ? s.dye.t : 0, cost: pierceCost(s),
+      prompt: wish ? wishPrompt(wish) : def.prompt, i,
+      swatches: colour ? swatchesFor(s, id) : null, on: this.swatch[id], want: wish && colour ? wish.want : null,
+      t: colour ? s[id].t : 0, cost: pierceCost(s), gems: s.gems.length,
     });
-    this.ui.markNext(this.nextIdx());
+    this.ui.markNext(-1);
     this.audio.whoosh(0.1);
     this.setMode('style');
     this.refreshKit();
     return true;
   }
-  // done styling: back to picking a treatment (or quietly, when one is picked instead)
+  // done styling (the done button, Space): a wish is scored on what was done, then back
+  // to picking; quietly (back = false) when another tool is picked instead, unscored
   endStyle(back = true) {
-    if (!this.style) return;
+    const st = this.style;
+    if (!st) return;
     this.style = null;
     this.ui.hideStyle();
-    if (back) { this.audio.tick(); this.toPick(); }
+    if (!back) return;
+    if (st.i >= 0 && touched(this.s, st.def.id)) this.finishWish(st.i);
+    else { this.audio.tick(); this.afterTool(); }
   }
-  // a swatch: the next rubs blend the hair toward that colour
-  pickDye(id) {
-    const d = DYES.find((x) => x.id === id);
-    if (!d || !this.style || this.style.def.id !== 'dye') return;
-    this.dyeId = id;
-    setDye(this.s, d);
-    this.ui.markDye(id);
+  // the wish scored like a finished treatment: a stamp, the badge, the aura
+  finishWish(i) {
+    const r = wishScore(this.s, this.defs[i].wish);
+    this.idx = i; this.spare = false;
+    this.scores[i] = r.score; this.verdicts[i] = r.verdict;
+    this.used.add(i);
+    this.feedback(r, true);
+    this.refreshKit();
+    this.setMode('outro');
+  }
+  // a swatch: the next rubs blend toward that colour
+  pickSwatch(id) {
+    const st = this.style;
+    if (!st || !PALETTES[st.def.id] || !PALETTES[st.def.id].some((d) => d.id === id)) return;
+    this.swatch[st.def.id] = id;
+    setPaint(this.s, st.def.id, id);
+    this.ui.markSwatch(id);
     this.ui.setHold(0, null, 1);
     this.audio.tick();
     this.refreshKit();
@@ -294,28 +341,27 @@ export class Game {
     const st = this.style;
     if (src === 'key') { this.endStyle(); return; } // Space: done
     const q = this.pointer();
-    if (st.def.id === 'dye') { st.down = true; st.last = q; return; }
-    this.pierce(q);
+    if (PALETTES[st.def.id]) { st.down = true; st.last = q; return; }
+    if (st.def.id === 'pierce') this.pierce(q); else this.stick(q);
   }
-  // rubbing the hair blends the dye in, by how far the finger travels over it
-  rubDye() {
-    const st = this.style, s = this.s, q = this.pointer(), last = st.last;
+  // rubbing blends the colour in, by how far the finger travels over the hair, lips or cheeks
+  rub() {
+    const st = this.style, id = st.def.id, s = this.s, p = s[id], q = this.pointer(), last = st.last;
     st.last = q;
-    if (!last || !s.dye || !onHair(q.x, q.y)) return;
+    if (!last || !p || !onPaint(id, q.x, q.y)) return;
     const d = Math.hypot(q.x - last.x, q.y - last.y);
     if (d < 0.5) return;
-    const was = s.dye.t;
-    s.dye.t = Math.min(1, was + d / DYE_RUB);
+    const was = p.t;
+    p.t = Math.min(1, was + d / rubLength(id));
     st.rub += d;
     if (st.rub > 40) {
       st.rub = 0;
-      this.fx.spark(q.sx, q.sy, { size: rand(9, 14), col: s.dye.to.hi, vy: -60 });
-      this.fx.drops(q.sx, q.sy, 2, s.dye.to.c);
-      this.audio.drip();
+      this.fx.spark(q.sx, q.sy, { size: rand(9, 14), col: p.to.hi, vy: -60 });
+      if (id === 'dye') { this.fx.drops(q.sx, q.sy, 2, p.to.c); this.audio.drip(); } else this.audio.tick();
     }
-    this.ui.setHold(s.dye.t, null, 1);
-    if (was < 1 && s.dye.t >= 1) {
-      const c = headToStage(s, 0, -150);
+    this.ui.setHold(p.t, null, 1);
+    if (was < 1 && p.t >= 1) {
+      const c = headToStage(s, 0, { dye: -150, lips: 126, blush: 68 }[id]);
       this.fx.glitter(c.x, c.y, 16, 320);
       this.fx.burst(c.x, c.y, 8, 300);
       this.audio.sparkle();
@@ -323,33 +369,67 @@ export class Game {
       this.refreshKit();
     }
   }
-  // a tap on the head adds a piercing there (aura pays for it); a tap on one takes it out
+  // a tap on the head adds a piercing there (aura pays for one they didn't ask for); a tap
+  // on one takes it out
   pierce(q) {
-    const s = this.s;
+    const s = this.s, wish = this.style.i >= 0 ? this.defs[this.style.i].wish : null;
     const k = s.pierced.findIndex((p) => Math.hypot(p.x - q.x, p.y - q.y) < 13);
     if (k >= 0) {
       const p = s.pierced.splice(k, 1)[0], at = headToStage(s, p.x, p.y);
       this.fx.ring(at.x, at.y, 4, 22, 0.3, '#ffffff', 4);
-      this.fx.text(at.x, at.y - 34, `+${p.cost}`, '#3fe0b5', 24);
+      if (p.cost) this.fx.text(at.x, at.y - 34, `+${p.cost}`, '#3fe0b5', 24);
       this.audio.tick();
     } else {
       if (eyeSide(s, q.x, q.y) >= 0) { this.hurtAt(q.x, q.y, 'bruise'); this.refreshKit(); return; } // not the eye!
       const p = pierceSpot(q.x, q.y);
       if (!p) { this.miss(q); return; }
       if (s.pierced.length >= PIERCE.max) { this.ui.toast('NO MORE ROOM'); this.audio.tink(0.5); return; }
+      if (wish && wish.want === p.spot && !s.pierced.some((x) => x.spot === p.spot)) p.cost = 0; // the one they asked for
       s.pierced.push(p);
       const at = headToStage(s, p.x, p.y), odd = p.cost > PIERCE.usual;
       this.fx.ring(at.x, at.y, 3, 26, 0.32, '#ffffff', 5);
       this.fx.burst(at.x, at.y, 5, 200, { size: rand(8, 12) });
-      this.fx.text(at.x, at.y - 36, `-${p.cost}`, odd ? '#ff7d9a' : '#ffffff', odd ? 30 : 22);
+      if (p.cost) this.fx.text(at.x, at.y - 36, `-${p.cost}`, odd ? '#ff7d9a' : '#ffffff', odd ? 30 : 22);
       this.audio.tink(1.7);
       this.director.bump(0.25);
       react(s, 'squeeze', odd ? 0.6 : 0.35, 'wince');
       if (odd) s.sweat = Math.max(s.sweat, 0.6);
     }
     this.updateAura();
-    this.ui.styleCost(pierceCost(s), s.pierced.length);
+    this.ui.styleCost(pierceCost(s));
     this.refreshKit();
+  }
+  // a tap on the face sticks on a gem (star, heart, diamond in turn); a tap on one peels it off
+  stick(q) {
+    const s = this.s;
+    const k = s.gems.findIndex((g) => Math.hypot(g.x - q.x, g.y - q.y) < 16);
+    if (k >= 0) {
+      const g = s.gems.splice(k, 1)[0], at = headToStage(s, g.x, g.y);
+      this.fx.ring(at.x, at.y, 4, 22, 0.3, '#ffffff', 4);
+      this.audio.tick();
+    } else {
+      if (eyeSide(s, q.x, q.y) >= 0) { this.hurtAt(q.x, q.y, 'bruise'); this.refreshKit(); return; } // not on the eye!
+      if (!onFace(q.x, q.y, 0)) { this.miss(q); return; }
+      if (s.gems.length >= GEMS.max) { this.ui.toast('NO MORE ROOM'); this.audio.tink(0.5); return; }
+      this.gemN = (this.gemN || 0) + 1;
+      s.gems.push({ x: q.x, y: q.y, kind: GEMS.kinds[this.gemN % GEMS.kinds.length], rot: rand(-0.35, 0.35) });
+      const at = headToStage(s, q.x, q.y);
+      this.fx.burst(at.x, at.y, 6, 220, { size: rand(8, 12) });
+      this.audio.tink(1.9);
+      this.director.bump(0.2);
+      react(s, 'happy', 0.6, 'o');
+    }
+    this.ui.styleCost(null, s.gems.length);
+    this.refreshKit();
+  }
+  // scripted (?debug test runs): the wish done just as asked
+  autoStyle() {
+    const st = this.style;
+    if (!st || st.i < 0) return;
+    const w = this.defs[st.i].wish, s = this.s;
+    if (PALETTES[w.id]) { this.pickSwatch(w.want); s[w.id].t = 1; }
+    else if (w.id === 'pierce') { const a = SPOT_AT[w.want], p = pierceSpot(a.x, a.y); p.cost = 0; s.pierced.push(p); }
+    else for (let k = 0; k < w.want; k++) s.gems.push({ x: -60 + k * 40, y: -110, kind: GEMS.kinds[k % 3], rot: 0 });
   }
   // the first unfinished treatment in the row: the one to do next
   nextIdx() { return this.defs.findIndex((d, k) => !this.used.has(k)); }
@@ -365,7 +445,7 @@ export class Game {
     this.ui.titleCard(false);
     this.director.go(this.view(VIEWS.pick), TRANSITION);
     this.director.setObstruction(this.ui.obstruction(this.ui.kitOpen ? 'kit' : 'play'));
-    this.ui.pickPrompt(this.used.size / this.tools.length);
+    this.ui.pickPrompt(this.used.size / this.defs.length);
     this.ui.markNext(this.nextIdx());
     this.setMode('pick');
     this.refreshKit();
@@ -410,6 +490,7 @@ export class Game {
       this.audio.boing(1.05);
     });
     this.audio.whoosh(0.14);
+    this.sayWish(1.1);
     this.setMode('arrive');
     this.retryMs = performance.now() - t0;
   }
@@ -665,10 +746,11 @@ export class Game {
     if (idx.length) this.ui.setAura(this.auraNow());
   }
   auraNow() { return auraOf(this.scored().map((i) => this.scores[i] || 0), this.minus()); }
-  feedback(r) {
+  // scored: it counts toward the aura (a free use or an unscored treatment doesn't)
+  feedback(r, scored = !!this.tool.def.scored && !this.spare) {
     const s = this.s;
     const good = r.verdict === 'perfect' || r.verdict === 'good';
-    this.ui.stamp(r.score, good ? r.verdict : 'fail', r.verdict, !!this.tool.def.scored && !this.spare);
+    this.ui.stamp(r.score, good ? r.verdict : 'fail', r.verdict, scored);
     this.audio.stamp();
     if (good) {
       this.audio.success();
@@ -695,8 +777,12 @@ export class Game {
     if (!this.spare) this.ui.stepDone(this.idx, good);
   }
   nextTool() {
-    this.tool.exit();
-    if (this.used.size >= this.tools.length) this.startFinale();
+    if (this.tool) this.tool.exit();
+    this.afterTool();
+  }
+  // everything in the order done: the finale; else pick the next
+  afterTool() {
+    if (this.used.size >= this.defs.length) this.startFinale();
     else this.toPick();
   }
   startFinale() {
@@ -881,7 +967,7 @@ export class Game {
         break;
       case 'style':
         prog = 0;
-        if (this.style.down) this.rubDye();
+        if (this.style.down) this.rub();
         break;
       case 'transition':
         tool.idle(dt, this.p);
@@ -918,7 +1004,7 @@ export class Game {
         break;
       }
       case 'outro':
-        if (tool.outroDone() && this.modeT > 0.7) this.nextTool();
+        if ((!tool || tool.outroDone()) && this.modeT > 0.7) this.nextTool();
         break;
       case 'finale':
         this.fit(dt);

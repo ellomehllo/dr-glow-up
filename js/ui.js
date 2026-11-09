@@ -7,11 +7,12 @@
 // for controls, drawn art for tools (icons.js, toolart.js); no emoji.
 import { ICONS, STAR } from './icons.js';
 import { RANKS } from './config.js';
+import { wishMark } from './style.js';
 
 const VERDICT = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!' };
 
 export class UI {
-  constructor(root, { onMute, onAgain, onNext, onSplit, onGesture, onKit, onKitPick, onKitClose, onDye, onStyleDone, onUnlockPlay }) {
+  constructor(root, { onMute, onAgain, onNext, onSplit, onGesture, onKit, onKitPick, onKitClose, onSwatch, onStyleDone, onUnlockPlay }) {
     this.root = root;
     // logo letters; `o` keeps the wave delay running on across words
     const letters = (w, o = 0) => [...w].map((c, i) => `<span style="--i:${i + o}" aria-hidden="true">${c}</span>`).join('');
@@ -123,7 +124,7 @@ export class UI {
       if (!onKitPick(b.dataset.id)) this.shake(b);
     });
     // the style card: a dye swatch, or done
-    e.swatches.addEventListener('click', (ev) => { const b = ev.target.closest('.sw[data-dye]'); if (b) onDye(b.dataset.dye); });
+    e.swatches.addEventListener('click', (ev) => { const b = ev.target.closest('.sw[data-sw]'); if (b) onSwatch(b.dataset.sw); });
     e.styDone.addEventListener('click', () => onStyleDone());
     // the new-tool pop-up
     e.ulPlay.addEventListener('click', () => { onGesture && onGesture(); this.hideUnlock(); onUnlockPlay(); });
@@ -157,9 +158,14 @@ export class UI {
 
   // one badge per treatment this patient needs (any order); one that is new on this
   // level gets a NEW tag
+  // and the patient's wish shows what they asked for: a colour dot or a little tag
   setSteps(defs, fresh = []) {
     const e = this.el;
-    e.stepsList.innerHTML = defs.map((d, i) => `<li class="${fresh.includes(d.id) ? 'new' : ''}" aria-label="${i + 1}: ${d.name}">${ICONS[d.icon]}<i class="sn" aria-hidden="true">${i + 1}</i></li>`).join('');
+    e.stepsList.innerHTML = defs.map((d, i) => {
+      const m = d.wish ? wishMark(d.wish) : {};
+      const mark = m.dot ? `<i class="dot" style="--c:${m.dot}" aria-hidden="true"></i>` : m.tag ? `<i class="tag" aria-hidden="true">${m.tag}</i>` : '';
+      return `<li class="${fresh.includes(d.id) ? 'new' : ''}${d.wish ? ' wish' : ''}" aria-label="${i + 1}: ${d.wish ? d.prompt.toLowerCase() : d.name}">${ICONS[d.icon]}<i class="sn" aria-hidden="true">${i + 1}</i>${mark}</li>`;
+    }).join('');
     e.steps = [...e.stepsList.querySelectorAll('li')];
   }
   // the badge Space would pick next gets a marching ring (none: -1)
@@ -209,8 +215,9 @@ export class UI {
     this.setHold(done, null, 1);
   }
 
-  // a style tool out: its prompt, and the swatches (dye) or the running cost (piercing)
-  // o: { dyes: [{ id, name, c, hi }] | null, on: dye id, t: dye progress, cost }
+  // a style tool out: its prompt (the wish, if it is one), and the swatches (colour tools,
+  // the wished colour marked) or a counter (piercing cost, gems stuck on)
+  // o: { prompt, i: its badge or -1, swatches: [{ id, name, c, hi }] | null, on, want, t, cost }
   showStyle(def, o) {
     const e = this.el;
     e.card.classList.remove('in', 'pick', 'style');
@@ -218,29 +225,36 @@ export class UI {
     e.card.classList.add('in', 'style');
     e.card.dataset.style = def.id;
     e.prIco.innerHTML = ICONS[def.icon] || '';
-    e.steps.forEach((li) => li.classList.remove('now'));
-    this.prompt(def.prompt, false);
-    e.swatches.innerHTML = (o.dyes || []).map((d) => `<button class="sw${d.id === 'natural' ? ' nat' : ''}" data-ui data-dye="${d.id}" type="button" role="radio" aria-checked="false" aria-label="${d.name}" style="--c:${d.c};--hi:${d.hi}">${d.id === 'natural' ? ICONS.again : ''}</button>`).join('');
-    e.swatches.hidden = !o.dyes;
-    e.styCost.hidden = def.id !== 'pierce';
-    if (o.dyes) this.markDye(o.on);
-    this.styleCost(o.cost || 0);
+    e.steps.forEach((li, k) => li.classList.toggle('now', k === o.i));
+    this.prompt(o.prompt, false);
+    e.swatches.innerHTML = (o.swatches || []).map((d) => `<button class="sw${d.id === 'natural' ? ' nat' : ''}${d.id === o.want ? ' want' : ''}" data-ui data-sw="${d.id}" type="button" role="radio" aria-checked="false" aria-label="${d.name}${d.id === o.want ? ', the one they want' : ''}" style="--c:${d.c};--hi:${d.hi}">${d.id === 'natural' ? ICONS.again : ''}</button>`).join('');
+    e.swatches.setAttribute('aria-label', def.name);
+    e.swatches.hidden = !o.swatches;
+    e.styCost.hidden = !!o.swatches;
+    if (o.swatches) this.markSwatch(o.on);
+    if (def.id === 'gems') this.styleCost(null, o.gems || 0); else this.styleCost(o.cost || 0);
     this._sweetKey = null;
     this.setHold(o.t || 0, null, 1);
   }
   hideStyle() { this.el.card.classList.remove('style'); delete this.el.card.dataset.style; }
-  markDye(id) {
+  markSwatch(id) {
     for (const b of this.el.swatches.children) {
-      const on = b.dataset.dye === id;
+      const on = b.dataset.sw === id;
       b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
     }
   }
-  // what the piercings so far take off the aura
-  styleCost(cost) {
+  // the counter: what piercings take off the aura, or (cost null) how many gems are on
+  styleCost(cost, gems = 0) {
     const c = this.el.styCost;
+    if (cost === null) {
+      c.textContent = String(gems);
+      c.classList.remove('neg');
+      c.setAttribute('aria-label', `${gems} gems`);
+      return;
+    }
     c.textContent = cost ? `-${cost}` : '0';
     c.classList.toggle('neg', cost > 0);
-    c.setAttribute('aria-label', cost ? `Piercings cost ${cost} aura` : 'No piercings');
+    c.setAttribute('aria-label', cost ? `Piercings cost ${cost} aura` : 'No aura spent');
   }
 
   // ---------- new tool pop-up ----------
@@ -263,7 +277,7 @@ export class UI {
 
   // ---------- the kit ----------
   // list: [{ id, icon, name, state: need | now | done | free | locked, lv }]
-  // styles: [{ id, icon, name, state: style | now, dot: hair colour, tag: aura cost }]
+  // styles: [{ id, icon, name, state: style | need | done | now | locked, lv, dot: colour now, tag: aura cost }]
   setKit(list, styles = []) {
     const e = this.el;
     const label = { need: '', now: ', in use', done: ', done, use again', free: ', not needed, free to use' };
@@ -274,10 +288,13 @@ export class UI {
       return `<li style="--i:${i}"><button class="slot ${t.state}" data-ui data-id="${t.id}" type="button" aria-label="${t.name}${label[t.state]}">${ICONS[t.icon]}${t.state === 'done' ? `<i class="ok">${ICONS.check}</i>` : ''}</button></li>`;
     }).join('');
     e.styleSlots.innerHTML = styles.map((t, i) => {
-      const say = `${t.name}${t.state === 'now' ? ', in use' : ''}${t.tag ? `, costs ${t.tag.slice(1)} aura` : ''}`;
-      return `<li style="--i:${list.length + i}"><button class="slot style ${t.state}" data-ui data-id="${t.id}" type="button" aria-label="${say}">${ICONS[t.icon]}${t.dot ? `<i class="dot" style="--c:${t.dot}"></i>` : ''}${t.tag ? `<i class="tag">${t.tag}</i>` : ''}</button></li>`;
+      if (t.state === 'locked') {
+        return `<li style="--i:${list.length + i}"><span class="slot locked" role="img" aria-label="Locked, opens at level ${t.lv}"><span class="lv">LV ${t.lv}</span></span></li>`;
+      }
+      const say = `${t.name}${label[t.state] || ''}${t.tag ? `, costs ${t.tag.slice(1)} aura` : ''}`;
+      return `<li style="--i:${list.length + i}"><button class="slot style ${t.state}" data-ui data-id="${t.id}" type="button" aria-label="${say}">${ICONS[t.icon]}${t.dot ? `<i class="dot" style="--c:${t.dot}"></i>` : ''}${t.tag ? `<i class="tag">${t.tag}</i>` : ''}${t.state === 'done' ? `<i class="ok">${ICONS.check}</i>` : ''}</button></li>`;
     }).join('');
-    const left = list.filter((t) => t.state === 'need' || t.state === 'now').length;
+    const left = list.filter((t) => t.state === 'need' || t.state === 'now').length + styles.filter((t) => t.state === 'need').length;
     e.kitN.textContent = String(left);
     e.kitN.hidden = !left;
   }
