@@ -48,15 +48,25 @@ function loadKnown() { try { return new Set(JSON.parse(localStorage.getItem(KNOW
 // tools with no in-world tool of their own: their kit icon is held instead (drawHeld)
 const HELD_ICON = new Set(['pop', 'mew']);
 const HELD = {};
+// the icon of the tool in hand, drawn once (with its soft shadow) into a canvas: drawing
+// the SVG with a blurred shadow every frame is slow on phones. null until it has loaded
 function heldImage(icon) {
-  if (!HELD[icon]) {
+  if (!(icon in HELD)) {
+    HELD[icon] = null;
     const img = new Image();
     const svg = (ICONS[icon] || '').replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" ');
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = c.height = HELD_PX;
+      const x = c.getContext('2d'), pad = (HELD_PX - 192) / 2;
+      x.shadowColor = 'rgba(58,39,71,0.25)'; x.shadowBlur = 24; x.shadowOffsetY = 8;
+      x.drawImage(img, pad, pad, 192, 192);
+      HELD[icon] = c;
+    };
     img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-    HELD[icon] = img;
   }
   return HELD[icon];
 }
+const HELD_PX = 256; // the cached icon: 192 px of icon and room for its shadow
 const PEEK = 1.7; // seconds a look in the mouth (or at the waiting room window) lasts
 const TAP_IGNORE = 0.06; // a release before this much progress is a false start, not a release
 const TRANSITION = 0.9;
@@ -127,7 +137,7 @@ export class Game {
     this.seenHint = new Set();
     this.mode = 'boot';
     this.modeT = 0;
-    this.timers = [];
+    this.timers = []; this.windowT = 0; // until when the camera looks at the waiting room window
     this.scores = [];
     this.verdicts = [];
     this.flash = 0;
@@ -550,7 +560,7 @@ export class Game {
     this.backdrop.fix(); // the room is put right for every level
     this.fx.clear();
     this.audio.stopLoops();
-    this.scores = []; this.verdicts = []; this.timers = [];
+    this.scores = []; this.verdicts = []; this.timers = []; this.windowT = 0; // no look at the window carries over
     this.flash = 0; g.fail = 0; g.hit = 0; g.ghost = -1; g.prog = 0; g.hint = false;
     this.tool = null; this.idx = -1; this.style = null;
     this.used = new Set(); this.spares = {}; this.spare = false;
@@ -655,15 +665,13 @@ export class Game {
     const id = this.style ? this.style.def.icon : this.tool && HELD_ICON.has(this.tool.def.id) && this.entered.has(this.tool) && !this.tool.outro ? this.tool.def.icon : null;
     if (!id || !PLAYING.has(this.mode) || this.mode === 'transition') return;
     const img = heldImage(id);
-    if (!img.complete || !img.naturalWidth) return;
+    if (!img) return;
     const S = 92 / this.director.out.s; // about 92 px on screen at any zoom
     let x, y;
     if (this.input.held && this.input.src === 'pointer') { const q = this.pointer(); x = q.sx + S * 0.18; y = q.sy - S * 0.62; }
     else { const h = headToStage(this.s, 168, -40); x = h.x; y = h.y + Math.sin(time * 3) * 8; }
-    ctx.save();
-    ctx.shadowColor = 'rgba(58,39,71,0.25)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
-    ctx.drawImage(img, x - S / 2, y - S / 2, S, S);
-    ctx.restore();
+    const F = S * HELD_PX / 192; // the canvas is a little bigger than the icon (the shadow)
+    ctx.drawImage(img, x - F / 2, y - F / 2, F, F);
   }
 
   // ---------- the room ----------
@@ -1096,7 +1104,7 @@ export class Game {
     if (this.mode !== 'results') return;
     const n = this.passed ? (this.level + 1) % LEVELS.length : this.level;
     this.setMode('next');
-    this.timers = [];
+    this.timers = []; this.windowT = 0;
     this.ui.reset();
     this.director.setObstruction(this.ui.obstruction('play'));
     this.director.go(WAIT_VIEW, 0.75);

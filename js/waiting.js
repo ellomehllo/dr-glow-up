@@ -24,6 +24,9 @@ const EXIT_X = -260; // where the one called walks out to (behind the frame on t
 const SCALE = 0.4;
 const SIT_Y = 162; // where a seated patient's origin sits: shoulders just above the bench back
 const QUEUE = 3;
+// a waiting patient's drawing bounds (patient units: any build, hair and lift)
+const BX0 = -520, BX1 = 520, BY0 = -600, BY1 = 900;
+const SPRITE_MAX = 1.6e6; // cached pictures up to this many pixels; bigger ones draw live
 
 class Waiter {
   constructor(setup, x) {
@@ -177,18 +180,51 @@ export class WaitingRoom {
   draw(ctx, time) {
     // farthest first, so the ones nearer the clinic overlap
     const order = this.list.slice().sort((a, b) => a.x - b.x);
-    for (const w of order) {
+    const m = ctx.getTransform(), k = Math.hypot(m.a, m.b) * SCALE; // device px per patient unit
+    const cw = ctx.canvas.width, ch = ctx.canvas.height;
+    const bottom = SEAT_Y + 4;
+    this.frame = (this.frame || 0) + 1;
+    for (let i = 0; i < order.length; i++) {
+      const w = order[i];
       const bob = w.lift > 0 ? Math.abs(Math.sin(w.walk * 9)) * -16 * w.lift : 0;
       const y = SIT_Y - easeIO(w.lift) * 70 + bob;
+      // off screen (or outside the doorway): nothing to draw
+      const l = Math.max(DOOR.x, w.x + BX0 * SCALE), r = Math.min(DOOR.x + DOOR.w, w.x + BX1 * SCALE);
+      const t = Math.max(DOOR.y, y + BY0 * SCALE), btm = Math.min(bottom, y + BY1 * SCALE);
+      if (l >= r || t >= btm) continue;
+      const p0 = m.transformPoint({ x: l, y: t }), p1 = m.transformPoint({ x: r, y: btm });
+      if (Math.max(p0.x, p1.x) < 0 || Math.min(p0.x, p1.x) > cw || Math.max(p0.y, p1.y) < 0 || Math.min(p0.y, p1.y) > ch) continue;
       ctx.save();
       // inside the doorway only (walking in and out passes behind the frame), and always
       // behind the bench: cut at its seat, standing or sitting, so no one shows below it
-      const bottom = SEAT_Y + 4;
       ctx.beginPath(); ctx.rect(DOOR.x, DOOR.y, DOOR.w, bottom - DOOR.y); ctx.clip();
       ctx.translate(w.x, y);
       ctx.scale(SCALE, SCALE);
-      drawPatient(ctx, w.s, time, null);
+      // small on screen: draw from a cached picture, redrawn a few at a time (each one
+      // about 20 times a second) and whenever the zoom has moved on; close up, draw live
+      if ((BX1 - BX0) * (BY1 - BY0) * k * k < SPRITE_MAX) this.sprite(ctx, w, time, k, (this.frame + i) % order.length === 0);
+      else drawPatient(ctx, w.s, time, null);
       ctx.restore();
     }
+  }
+  sprite(ctx, w, time, k, turn) {
+    let sp = w.sprite;
+    // a new one is drawn now; otherwise only on its turn (zoomed since: stretched until then,
+    // so a zoom never redraws all of them in the same frame)
+    const fresh = !sp;
+    if (!sp) sp = w.sprite = { c: document.createElement('canvas'), k: 0 };
+    if (fresh || turn) {
+      const c = sp.c, pw = Math.ceil((BX1 - BX0) * k), ph = Math.ceil((BY1 - BY0) * k);
+      // resizing a canvas is slow (a new buffer): grow with room to spare, shrink only a lot
+      if (pw > c.width || ph > c.height || pw < c.width * 0.5) { c.width = Math.ceil(pw * 1.25); c.height = Math.ceil(ph * 1.25); }
+      sp.pw = pw; sp.ph = ph;
+      const x = c.getContext('2d');
+      x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, c.width, c.height);
+      x.setTransform(k, 0, 0, k, -BX0 * k, -BY0 * k);
+      x.lineJoin = 'round'; x.lineCap = 'round';
+      drawPatient(x, w.s, time, null);
+      sp.k = k;
+    }
+    ctx.drawImage(sp.c, 0, 0, sp.pw, sp.ph, BX0, BY0, BX1 - BX0, BY1 - BY0);
   }
 }
