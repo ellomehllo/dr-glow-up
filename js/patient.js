@@ -20,7 +20,7 @@ export const COL = {
   chair: '#ff9fb8', chairDeep: '#f27a9b', chairHi: '#ffd0dc',
 };
 const LW = 6;
-export const SLOUCH = 56; // how far the head sinks into the shoulders before mewing
+const SLOUCH = 56; // how far the head sinks into the shoulders before mewing
 export const EYE = { x: 58, y: 16, rx: 26, ry: 21 };
 
 // ---------- head outline ----------
@@ -32,7 +32,7 @@ const JAW_SHARP = [[92, -202, 156, -142, 156, -30], [156, 30, 140, 72, 132, 122]
 const JAW_OVER = [[92, -202, 156, -142, 156, -30], [154, 30, 142, 70, 112, 116], [86, 150, 38, 190, 12, 204], [7, 206, 3, 207, 0, 207]];
 const SEGS = JAW_SOFT.map((s) => s.slice());
 
-export function jawSegs(j, out = SEGS) {
+function jawSegs(j, out = SEGS) {
   let a, b, t;
   if (j <= 1) { a = JAW_SOFT; b = JAW_SHARP; t = smooth(clamp01(j)); }
   else { a = JAW_SHARP; b = JAW_OVER; t = clamp01((j - 1) / 0.35); }
@@ -608,6 +608,9 @@ function drawMouth(ctx, s, time) {
 function drawNose(ctx, kind, k = 1, sk = null) {
   const big = smooth(clamp01(1 - k)), tiny = clamp01((k - 1) / 0.3);
   const sz = 1 + 0.5 * big - 0.42 * tiny, T = sk ? toneOf(sk) : null;
+  // the big nose stays solid while it shrinks and only hands over to the patient's own
+  // nose at the very end, so the two are never seen on top of each other
+  const solid = sk ? clamp01(big / 0.15) : 0, own = 1 - solid;
   ctx.save();
   if (sz !== 1) { ctx.translate(0, 40); ctx.scale(sz, sz); ctx.translate(0, -40); }
   if (sk) { // shading: the shadow side of the bridge, the shadow under the tip, a lit tip
@@ -615,42 +618,46 @@ function drawNose(ctx, kind, k = 1, sk = null) {
     soft(ctx, 2, 82, 22, 7, sk.deep, 0.32);
     soft(ctx, -3, 64, 10, 8, '#ffffff', 0.26);
   }
-  ctx.lineWidth = 3; ctx.strokeStyle = T ? T.line : INK; ctx.globalAlpha = 0.85;
-  ctx.beginPath();
-  if (kind === 'button') {
-    ctx.moveTo(-12, 64); ctx.quadraticCurveTo(-17, 79, -6, 80); ctx.moveTo(12, 64); ctx.quadraticCurveTo(17, 79, 6, 80); ctx.stroke();
-    nostrils(ctx, T, 6, 77, 3.4);
-  } else if (kind === 'wide') {
-    ctx.moveTo(-6, 30); ctx.bezierCurveTo(-8, 44, -12, 54, -20, 62); ctx.quadraticCurveTo(-34, 77, -17, 81);
-    ctx.moveTo(20, 62); ctx.quadraticCurveTo(34, 77, 17, 81);
-    ctx.stroke();
-    nostrils(ctx, T, 10, 81, 4);
-  } else {
-    const t = kind === 'long' ? -14 : 0;
-    const d = t ? 6 : 0;
-    ctx.moveTo(-6, 34 + t * 0.5); ctx.bezierCurveTo(-9, 46 + t * 0.4, -20, 58, -16, 72 + d); ctx.quadraticCurveTo(-12, 79 + d, -5, 80 + d); ctx.stroke();
-    ctx.globalAlpha = 0.6; ctx.lineWidth = 2.6;
-    ctx.beginPath(); ctx.moveTo(16, 69 + d); ctx.quadraticCurveTo(23, 76 + d, 13, 81 + d); ctx.stroke();
-    nostrils(ctx, T, 7, 79 + d, 3.4);
-  }
-  if (big > 0.02 && sk) drawBigNose(ctx, sk, big);
+  if (own > 0.01) drawOwnNose(ctx, kind, T, own);
+  if (solid > 0.01) drawBigNose(ctx, sk, big, solid);
   if (tiny > 0.02) { // upturned piggy nostrils
     ctx.globalAlpha = tiny; ctx.fillStyle = '#5a2a35';
     ell(ctx, -8, 74, 4.5, 6); ctx.fill(); ell(ctx, 8, 74, 4.5, 6); ctx.fill();
   }
   ctx.restore();
 }
+// the patient's own nose, drawn as lines (a: opacity)
+function drawOwnNose(ctx, kind, T, a) {
+  ctx.lineWidth = 3; ctx.strokeStyle = T ? T.line : INK; ctx.globalAlpha = 0.85 * a;
+  ctx.beginPath();
+  if (kind === 'button') {
+    ctx.moveTo(-12, 64); ctx.quadraticCurveTo(-17, 79, -6, 80); ctx.moveTo(12, 64); ctx.quadraticCurveTo(17, 79, 6, 80); ctx.stroke();
+    nostrils(ctx, T, 6, 77, 3.4, a);
+  } else if (kind === 'wide') {
+    ctx.moveTo(-6, 30); ctx.bezierCurveTo(-8, 44, -12, 54, -20, 62); ctx.quadraticCurveTo(-34, 77, -17, 81);
+    ctx.moveTo(20, 62); ctx.quadraticCurveTo(34, 77, 17, 81);
+    ctx.stroke();
+    nostrils(ctx, T, 10, 81, 4, a);
+  } else {
+    const t = kind === 'long' ? -14 : 0;
+    const d = t ? 6 : 0;
+    ctx.moveTo(-6, 34 + t * 0.5); ctx.bezierCurveTo(-9, 46 + t * 0.4, -20, 58, -16, 72 + d); ctx.quadraticCurveTo(-12, 79 + d, -5, 80 + d); ctx.stroke();
+    ctx.globalAlpha = 0.6 * a; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(16, 69 + d); ctx.quadraticCurveTo(23, 76 + d, 13, 81 + d); ctx.stroke();
+    nostrils(ctx, T, 7, 79 + d, 3.4, a);
+  }
+}
 // two small nostrils either side of x = 0
-function nostrils(ctx, T, dx, y, r) {
-  ctx.save(); ctx.globalAlpha = 0.6; ctx.fillStyle = T ? T.ink : INK;
+function nostrils(ctx, T, dx, y, r, a = 1) {
+  ctx.save(); ctx.globalAlpha = 0.6 * a; ctx.fillStyle = T ? T.ink : INK;
   for (const side of [-1, 1]) { ell(ctx, side * dx, y, r, r * 0.6, side * 0.35); ctx.fill(); }
   ctx.restore();
 }
 // the big, bumpy, red-tipped nose a patient comes in with for a nose job; it fades into
-// their own nose as the job goes on
-function drawBigNose(ctx, sk, a) {
+// their own nose as the job goes on (big: how far from done, solid: its opacity)
+function drawBigNose(ctx, sk, big, solid) {
   ctx.save();
-  ctx.globalAlpha = Math.min(1, a * 1.4);
+  ctx.globalAlpha = solid;
   ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 3.4; ctx.strokeStyle = toneOf(sk).ink;
   // bridge, with a bump on it
   const bridge = new Path2D('M -6 18 C -8 25 -19 30 -17 39 C -15 45 -17 50 -16 54 L 16 54 C 15 44 11 30 6 18 Z');
@@ -660,7 +667,7 @@ function drawBigNose(ctx, sk, a) {
   // nostril wings, then the round tip over them
   for (const side of [-1, 1]) { ell(ctx, side * 25, 74, 13, 11); ctx.fillStyle = sk.shade; ctx.fill(); ctx.stroke(); }
   ell(ctx, 1, 64, 27, 23); ctx.fillStyle = sk.base; ctx.fill(); ctx.stroke();
-  ell(ctx, 3, 68, 18, 13); ctx.fillStyle = 'rgba(255,100,115,0.32)'; ctx.fill();
+  ell(ctx, 3, 68, 18, 13); ctx.fillStyle = `rgba(255,100,115,${(0.32 * big).toFixed(3)})`; ctx.fill(); // the red tip calms down
   ell(ctx, -8, 56, 7, 5, -0.5); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();
   ctx.fillStyle = '#5a2a35';
   for (const side of [-1, 1]) { ell(ctx, side * 11, 84, 5, 3.5, side * 0.3); ctx.fill(); }

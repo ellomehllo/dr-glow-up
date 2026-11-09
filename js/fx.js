@@ -3,7 +3,7 @@
 import { TAU, star4, heart, easeOutBack, smooth, clamp01, rand, pick, glowSprite } from './draw.js';
 import { INK } from './patient.js';
 
-export const SPARK = ['#ffc93c', '#ff6fae', '#45c8ff', '#ffe066', '#b18cff'];
+const SPARK = ['#ffc93c', '#ff6fae', '#45c8ff', '#ffe066', '#b18cff'];
 const GLIT = ['#ffc93c', '#ff6fae', '#45c8ff', '#3fe0b5', '#b18cff', '#ffffff'];
 const CONF = ['#ff6fae', '#ffc93c', '#45c8ff', '#3fe0b5', '#b18cff', '#ff8a5c'];
 const FONT = 'Fredoka, ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif';

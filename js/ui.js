@@ -471,7 +471,7 @@ export class UI {
     e.stamp.classList.remove('on');
     e.toast.classList.remove('on');
     e.card.classList.remove('in');
-    e.steps.forEach((li) => li.classList.remove('ok', 'bad', 'now', 'next', 'miss'));
+    e.steps.forEach((li) => li.classList.remove('ok', 'bad', 'now', 'next'));
     this.setAura(0);
     this.hidePrompt();
   }

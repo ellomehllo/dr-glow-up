@@ -159,7 +159,7 @@ function flyingPiercing(ctx, ring) {
 }
 
 // silver tweezers, tips at (x, y), the handle up and to the right; pinch closes the tips
-export function drawTweezers(ctx, x, y, pinch, wob = 0) {
+function drawTweezers(ctx, x, y, pinch, wob = 0) {
   ctx.save();
   ctx.translate(x, y); ctx.rotate(-0.75 + wob);
   const gap = 7 * (1 - pinch) + 1.2;

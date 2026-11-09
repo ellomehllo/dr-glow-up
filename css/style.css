@@ -108,8 +108,7 @@ button { font: inherit; color: inherit; }
   background: var(--pink); border: 2px solid var(--ink); transform: rotate(12deg);
 }
 @keyframes hop { 0%, 100% { transform: translateY(-2px) scale(1.18); } 50% { transform: translateY(-6px) scale(1.18); } }
-/* the order: a number on every badge, a marching ring on the one to do next, and a
-   red mark on any done out of order */
+/* a number on every badge and a marching ring on the one Space picks next */
 .steps li .sn {
   position: absolute; left: -6px; bottom: -6px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
   font-style: normal; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; color: #fff; background: var(--ink);
@@ -117,11 +116,6 @@ button { font: inherit; color: inherit; }
 .steps li.next:not(.now) { outline: 3px dashed var(--ink); outline-offset: 3px; animation: nextring 1.1s ease-in-out infinite; }
 .steps li.next .sn { background: var(--pink); }
 @keyframes nextring { 0%, 100% { outline-color: var(--ink); } 50% { outline-color: rgba(58, 39, 71, .2); } }
-.steps li.miss::before {
-  content: '!'; position: absolute; right: -6px; bottom: -6px; width: 17px; height: 17px; border-radius: 50%;
-  font-size: 11px; font-weight: 700; line-height: 13px; text-align: center; color: #fff;
-  background: #d9466d; border: 2px solid var(--ink);
-}
 #ui.final .steps { opacity: 0; transition: opacity .3s; }
 
 /* ---------- title card ---------- */
@@ -440,8 +434,6 @@ button { font: inherit; color: inherit; }
 .rs-bars li.worst .rb-bar i { background: var(--coral); }
 .rb-sc { font-weight: 700; text-align: right; }
 .rb-sc .ico { width: 20px; height: 20px; margin-left: auto; color: #12a37c; stroke-width: 3; }
-.rs-bars li.order .rb-ico { background: #d9fff2; }
-.rs-bars li.order .rb-bar i { background: linear-gradient(90deg, var(--mint), #12c493); }
 .rs-bars li.order.miss { background: #ffe3ea; }
 .rs-bars li.order.miss .rb-ico { background: #fff; }
 .rs-bars li.order.miss .rb-bar i { background: var(--coral); }

@@ -9,7 +9,7 @@
 const API = 'https://gawytyorlxeoicczwobj.supabase.co';
 const KEY = 'sb_publishable_va8G3OF6qQtNe4yoEkYyew_wkQHD49z'; // public by design: the rules live in the database
 const STORE = 'drglowup.cloud.v1';
-export const HOME = 'doctorglowup.site';
+const HOME = 'doctorglowup.site';
 
 function readSession() {
   try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); return s && s.refresh_token ? s : null; } catch { return null; }

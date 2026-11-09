@@ -34,7 +34,7 @@ import { patientFor, randomPatient, pickKind } from './people.js';
 import { rollExtras, inMouth } from './extras.js';
 import { DYES, DYE_RUB, setDye, hairNow, onHair, pierceSpot, pierceCost, PIERCE } from './style.js';
 import { HURT, HURT_KIND, temperOf, lineFor, feelingFor, faceFor, BAD } from './mood.js';
-import { easeIO, rand, TAU } from './draw.js';
+import { easeIO, rand, TAU, shuffle } from './draw.js';
 import { WaitingRoom, DOOR } from './waiting.js';
 import { K as ROOM_K } from './backdrop.js';
 
@@ -51,10 +51,6 @@ const PLAYING = new Set(['arrive', 'pick', 'transition', 'ready', 'holding', 'br
 const BY_ID = Object.fromEntries(TOOLS.map((t) => [t.id, t]));
 const STYLE_BY_ID = Object.fromEntries(STYLES.map((t) => [t.id, t]));
 
-function shuffle(a) {
-  for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; }
-  return a;
-}
 // n of the list, at random, kept in the list's own order
 const some = (list, n) => shuffle(list.slice()).slice(0, n).sort((a, b) => list.indexOf(a) - list.indexOf(b));
 // sun spots for the laser, apart from each other and from the pimples

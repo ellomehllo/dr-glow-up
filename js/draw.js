@@ -10,6 +10,11 @@ export function easeOutBack(t) {
 }
 export const rand = (a, b) => a + Math.random() * (b - a);
 export const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+// shuffles the array in place and returns it
+export function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
 
 // four-point sparkle with concave sides
 export function star4(ctx, x, y, r, rot = 0, pinch = 0.16) {
@@ -114,7 +119,7 @@ export function ell(ctx, x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x
 // ---------- colour and soft shading ----------
 const rgbCache = new Map();
 // [r, g, b] of '#rrggbb' or 'rgb(r,g,b)'
-export function rgbOf(c) {
+function rgbOf(c) {
   let v = rgbCache.get(c);
   if (v) return v;
   if (c[0] === '#') { const n = parseInt(c.slice(1), 16); v = [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }

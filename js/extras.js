@@ -10,11 +10,9 @@
 // rollExtras decides what a new patient brings (a few at random once the tools are
 // unlocked, always the one a level introduces); makeState copies the result onto the
 // patient, and the draw functions here are called from patient.js in head space.
-import { INK, TAU, ell, clamp01, rand, pick } from './draw.js';
+import { INK, TAU, ell, clamp01, rand, pick, shuffle } from './draw.js';
+import { EXTRAS } from './config.js';
 
-export const EXTRA_IDS = ['tweeze', 'tbrush', 'drill', 'pliers'];
-const DENTAL = new Set(['tbrush', 'drill', 'pliers']);
-export const isDental = (id) => DENTAL.has(id);
 
 // ---------- where things go (head space) ----------
 // on the hair, around the crown and along the fringe
@@ -69,7 +67,7 @@ export function rollExtras({ open, must = [], who, carry = null }) {
   if (carry) {
     for (const id of carry.extras || []) if (open(id)) want.add(id);
   } else {
-    for (const id of shuffled(EXTRA_IDS.filter((id) => open(id) && !want.has(id)))) {
+    for (const id of shuffle(EXTRAS.filter((id) => open(id) && !want.has(id)))) {
       if (want.size >= 2) break;
       if (Math.random() < 0.42) want.add(id);
     }
@@ -80,7 +78,7 @@ export function rollExtras({ open, must = [], who, carry = null }) {
     if (want.has('tweeze')) {
       if (keep('tweeze')) { out.debris = carry.debris; out.worms = carry.worms; } else {
         const n = 1 + ((Math.random() * 3) | 0);
-        out.debris = shuffled(DEBRIS_SPOTS.slice()).slice(0, n).map((p) => ({ ...p, kind: pick(DEBRIS_KINDS), rot: p.a + rand(-0.5, 0.5), flip: Math.random() < 0.5 }));
+        out.debris = shuffle(DEBRIS_SPOTS.slice()).slice(0, n).map((p) => ({ ...p, kind: pick(DEBRIS_KINDS), rot: p.a + rand(-0.5, 0.5), flip: Math.random() < 0.5 }));
         if (Math.random() < 0.55) { const w = pick(WORM_SPOTS); out.worms = [{ ...w, ph: rand(0, TAU) }]; }
       }
     }
@@ -92,7 +90,7 @@ export function rollExtras({ open, must = [], who, carry = null }) {
   if (dental.length) {
     const d = keep('tbrush') || keep('drill') || keep('pliers') ? carry.dent : null;
     const dent = { plaque: Array(TEETH.length).fill(0), food: [], cav: [], rot: [] };
-    const free = shuffled(TEETH.map((_, i) => i));
+    const free = shuffle(TEETH.map((_, i) => i));
     if (want.has('pliers')) dent.rot = d && d.rot.length ? d.rot : [free.find((i) => TEETH[i].up && Math.abs(TEETH[i].x) > 10)];
     const others = free.filter((i) => !dent.rot.includes(i));
     if (want.has('drill')) dent.cav = d && d.cav.length ? d.cav : others.slice(0, 1 + ((Math.random() * 3) | 0));
@@ -106,10 +104,6 @@ export function rollExtras({ open, must = [], who, carry = null }) {
     out.extras.push(...dental);
   }
   return out;
-}
-function shuffled(a) {
-  for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; }
-  return a;
 }
 
 // ---------- drawing (head space) ----------

@@ -165,7 +165,7 @@ export class DrillTool extends MouthTool {
     if (inZone && !this.wasIn) g.audio.tick();
     this.wasIn = inZone;
   }
-  cancel() { const i = this.teeth()[this.cur]; if (i !== undefined) this.g.s.dent[i].fill = 0; this.idle(); }
+  cancel() { const i = this.teeth()[this.cur]; if (i !== undefined) this.g.s.dent[i].fill = 0; this.idle(); this.g.react('normal', 0.01, 'aah'); }
   idle() { this.g.audio.level('hum', 0); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, d = s.dent[this.teeth()[i]], q = toothAt(this.teeth()[i]), w = g.head(q.x, q.y);
@@ -265,7 +265,7 @@ export class PliersTool extends MouthTool {
     if (inZone && !this.wasIn) g.audio.tick();
     this.wasIn = inZone;
   }
-  cancel() { const i = this.teeth()[this.cur]; if (i !== undefined) this.g.s.dent[i].out = 0; this.k = 0; this.g.audio.tension(-1); }
+  cancel() { const i = this.teeth()[this.cur]; if (i !== undefined) this.g.s.dent[i].out = 0; this.k = 0; this.g.audio.tension(-1); this.g.react('normal', 0.01, 'aah'); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, ti = this.teeth()[i], d = s.dent[ti], q = toothAt(ti), w = g.head(q.x, q.y);
     g.audio.tension(-1);

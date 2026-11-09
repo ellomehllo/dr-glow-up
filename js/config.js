@@ -200,8 +200,6 @@ function makeLevel(n, prev) {
 }
 export const LEVELS = [];
 for (let n = 0; n < 50; n++) LEVELS.push(makeLevel(n, LEVELS[n - 1]));
-export const CHAPTERS = LEVELS.length / CHAPTER_SIZE;
-
 export const VIEWS = {
   intro: { x: 0, y: 130, r: 420 },
   pick: { x: 0, y: -10, r: 300, rel: true }, // the whole face, while choosing a tool

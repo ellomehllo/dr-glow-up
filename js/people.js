@@ -138,7 +138,7 @@ const CHARACTERS = {
   }),
 };
 const KINDS = Object.keys(CHARACTERS);
-export const PATIENT_KINDS = [...KINDS, 'regular'];
+const PATIENT_KINDS = [...KINDS, 'regular'];
 
 function regular() {
   return {
@@ -167,7 +167,7 @@ const SEQ = [];
     }
   }
 }
-export const kindFor = (level) => SEQ[level % SEQ.length];
+const kindFor = (level) => SEQ[level % SEQ.length];
 // level n's patient: always the same person (kind overrides who it is, for testing)
 export function patientFor(level, kind = kindFor(level)) {
   R = seeded(level * 7717 + 31);

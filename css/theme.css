@@ -25,7 +25,7 @@
 .lvls, .mute, .aura-track, .steps li, .prompt, .meter, .kit, .kit-n, .tray-sheet, .tray-x, .tray-ico,
 .slot, .slot .ok, .slot .dot, .slot .tag, .sp-in, .sp-ch, .sp-nw, .rs-nw, .sp-ico, .pr-ico, .results,
 .rb-ico, .rb-bar, .rs-btns button, .ul-card, .ul-x, .ul-ico, .ul-play, .rs-say, .sw, .sty-done, .rb-studs b,
-.steps li.new::after, .steps li.miss::before, .mt-zone {
+.steps li.new::after, .mt-zone {
   border: 1px solid transparent;
 }
 
@@ -67,7 +67,6 @@
 .steps li.new::after { background: var(--pink); box-shadow: 0 2px 6px rgba(255, 116, 177, .45); transform: rotate(8deg); }
 .steps li .sn { background: var(--ink-2); box-shadow: 0 0 0 2px #fff; }
 .steps li.next:not(.now) { outline: 2px dashed rgba(58, 39, 71, .35); outline-offset: 3px; }
-.steps li.miss::before { box-shadow: 0 0 0 2px #fff; }
 
 /* title card: keeps the original bold, outlined logo from style.css */
 

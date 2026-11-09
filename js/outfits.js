@@ -10,14 +10,13 @@ const LW = 4;
 const FOLD = 'rgba(40,20,60,0.16)';
 //   W: half-width at the chest, n: half-width of the neck, A: arm thickness,
 //   tr: trapezius rise beside the neck, sl: shoulder slope, bulge: deltoid bulge
-export const BUILDS = {
+const BUILDS = {
   skinny: { W: 198, n: 54, A: 64, tr: 0, sl: 16, bulge: 0 },
   medium: { W: 230, n: 66, A: 80, tr: 0, sl: 0, bulge: 0 },
   chubby: { W: 266, n: 76, A: 98, tr: -4, sl: 8, bulge: 4 },
   broad: { W: 262, n: 78, A: 96, tr: 8, sl: -6, bulge: 8 },
   huge: { W: 292, n: 92, A: 124, tr: 30, sl: -10, bulge: 24 },
 };
-export const buildOf = (w) => BUILDS[w && w.build] || BUILDS.medium;
 
 const SLEEVE = { gown: 'short', tee: 'short', tank: 'none', glam: 'none' }; // the rest: long
 
