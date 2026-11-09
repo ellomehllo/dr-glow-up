@@ -6,6 +6,7 @@ import { TAU, clamp01, lerp, smooth, easeOutBack, Poly, cubic, INK, ell, star4 }
 import { CURLS, CAP, tuftKept, drawHair, drawBackHair } from './hair.js';
 import { drawBody, drawNeck, drawBehind } from './outfits.js';
 import { mix } from './people.js';
+import { hairNow, drawPierced } from './style.js';
 
 export { INK, CURLS };
 export const CAP_PATH = CAP;
@@ -139,6 +140,13 @@ export function makeState(setup = DEFAULT_SETUP) {
     // wrinkles: how far the iron has run along each (0..1.25) and the red mark of an overdone one
     wrk: (st.wrinkles || []).map((w) => ({ ...w, f: 0, red: 0 })),
     strays: [], // stray hairs painted onto the face by a sloppy brush (head space)
+    dye: null, pierced: [], // style tools (style.js): hair dye in progress, piercings added
+    // hurts (mood.js): marks left where a tool hurt the skin, and per eye: how red it is,
+    // how long it stays squeezed shut, how much it is watering
+    hurts: [], eyeRed: [0, 0], eyeShut: [0, 0], tears: [0, 0], pain: 0,
+    // how they feel, drawn on the face: anger (brows down, red face), crying (both eyes
+    // streaming), bored (heavy lids); each eases toward its goal
+    anger: 0, angerV: 0, cry: 0, cryV: 0, bored: 0, boredV: 0,
     pimples: st.pimples.map((p, i) => ({ ...p, swell: 0, popped: false, mark: 0, shrink: 0, wob: i * 1.3 })),
     curls: CURLS.map((_, i) => (st.hair0 >= 1 && tuftKept(st.who && st.who.style, i) ? 9 : -1)), // seconds since each tuft grew in (-1: not yet)
     drips: [],
@@ -170,6 +178,16 @@ export function stageToHead(s, x, y) {
 }
 // rough face area (head space), used for hit tests and the brushes
 export function onFace(x, y, pad = 0) { return (x / (152 + pad)) ** 2 + ((y + 8) / (204 + pad)) ** 2 <= 1; }
+// which eye a head-space point is on (0 left, 1 right), or -1; a little wider than the
+// eye itself, since a fingertip is not a pin
+export function eyeSide(s, x, y) {
+  const e = (s.who && s.who.eyeSize) || 1;
+  for (const i of [0, 1]) {
+    const cx = (i ? 1 : -1) * EYE.x;
+    if (((x - cx) / (EYE.rx * e + 8)) ** 2 + ((y - EYE.y) / (EYE.ry * e + 8)) ** 2 <= 1) return i;
+  }
+  return -1;
+}
 
 // springs, blinks, timers. Runs every frame for the live patient.
 export function tickPatient(s, dt, time) {
@@ -197,6 +215,13 @@ export function tickPatient(s, dt, time) {
   for (const t of s.strays) t.t += dt;
   if (s.sweat > 0) s.sweat = Math.max(0, s.sweat - dt * 0.7);
   if (s.flush > 0) s.flush = Math.max(0, s.flush - dt * 0.5);
+  for (let i = 0; i < 2; i++) {
+    if (s.eyeShut[i] > 0) s.eyeShut[i] = Math.max(0, s.eyeShut[i] - dt);
+    if (s.tears[i] > 0) s.tears[i] = Math.max(0, s.tears[i] - dt * 0.22);
+  }
+  for (const h of s.hurts) h.t += dt;
+  const kf = 1 - Math.exp(-dt * 4);
+  s.angerV += (s.anger - s.angerV) * kf; s.cryV += (s.cry - s.cryV) * kf; s.boredV += (s.bored - s.boredV) * kf;
 }
 
 // ---------- drawing ----------
@@ -287,11 +312,12 @@ function drawPimples(ctx, s, time) {
 function drawEyes(ctx, s) {
   const w = s.who, e = w.eyeSize || 1;
   const hunter = clamp01((s.browL + s.browR) / 2);
-  const sad = clamp01(-s.moodV) * (1 - hunter);
+  const sad = clamp01(-s.moodV) * (1 - hunter) * (1 - s.angerV);
   for (const side of [-1, 1]) {
-    const cx = side * EYE.x, cy = EYE.y;
+    const cx = side * EYE.x, cy = EYE.y, i = side < 0 ? 0 : 1, red = s.eyeRed[i];
     let kind = s.expr;
     if (kind === 'wink') kind = side > 0 ? 'happy' : 'normal';
+    if (s.eyeShut[i] > 0) kind = 'squeeze'; // just hurt: squeezed shut
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = INK;
     if (kind === 'happy') {
       ctx.lineWidth = LW + 1;
@@ -300,6 +326,7 @@ function drawEyes(ctx, s) {
       continue;
     }
     if (kind === 'squeeze') {
+      if (red > 0.02) { ell(ctx, cx, cy, 24, 17); ctx.fillStyle = `rgba(255,80,100,${0.35 * red})`; ctx.fill(); }
       ctx.lineWidth = LW + 1;
       ctx.beginPath();
       ctx.moveTo(cx + side * 14, cy - 11); ctx.lineTo(cx - side * 12, cy); ctx.lineTo(cx + side * 14, cy + 11);
@@ -310,8 +337,17 @@ function drawEyes(ctx, s) {
     const rx = EYE.rx * e * (wide ? 1.1 : 1), ry = EYE.ry * e * (wide ? 1.25 : 1);
     ctx.save(); ctx.translate(cx, cy);
     const eye = new Path2D(); eye.ellipse(0, 0, rx, ry, 0, 0, TAU);
-    ctx.fillStyle = '#fff'; ctx.fill(eye);
+    ctx.fillStyle = red > 0.02 ? mix('#ffffff', '#ffb0bb', red) : '#fff'; ctx.fill(eye);
     ctx.save(); ctx.clip(eye);
+    if (red > 0.02) { // bloodshot: little red veins from the corners
+      ctx.globalAlpha = red; ctx.strokeStyle = '#e8384f'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (const k of [-1, 1]) {
+        ctx.moveTo(k * rx, -3); ctx.lineTo(k * rx * 0.62, -6); ctx.lineTo(k * rx * 0.45, -2);
+        ctx.moveTo(k * rx, 5); ctx.lineTo(k * rx * 0.66, 8); ctx.lineTo(k * rx * 0.5, 12);
+      }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
     const lx = s.look.x * 9, ly = s.look.y * 6 + 2, ir = (wide ? 10 : 13) * e;
     ell(ctx, lx, ly, ir, ir); ctx.fillStyle = w.eye.c; ctx.fill();
     ctx.lineWidth = 3; ctx.strokeStyle = w.eye.d; ctx.stroke();
@@ -323,6 +359,8 @@ function drawEyes(ctx, s) {
     dIn = lerp(dIn, 0.12, sad); dOut = lerp(dOut, 0.36, sad);
     dIn = lerp(dIn, 0.22, hunter); dOut = lerp(dOut, 0.12, hunter);
     if (w.lids) { dIn += w.lids * 0.8; dOut += w.lids; } // sleepy, heavy lids
+    dIn = lerp(dIn, 0.4, s.angerV); // angry: lids slant down to the nose
+    dIn += 0.34 * s.boredV; dOut += 0.34 * s.boredV; // bored: half shut
     if (wide) { dIn = 0; dOut = 0; }
     dIn = lerp(dIn, 1.05, s.blink); dOut = lerp(dOut, 1.05, s.blink);
     const xi = -side * rx * 1.08, xo = side * rx * 1.08;
@@ -332,6 +370,11 @@ function drawEyes(ctx, s) {
     ctx.closePath(); ctx.fillStyle = w.skin.shade; ctx.fill();
     ctx.restore();
     ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke(eye);
+    if (red > 0.02) { // sore, puffy lower lid
+      ctx.lineWidth = 5; ctx.strokeStyle = `rgba(255,80,100,${0.55 * red})`;
+      ctx.beginPath(); ctx.arc(0, -ry * 0.2, rx * 1.08, Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
+      ctx.strokeStyle = INK;
+    }
     // upper lid line; eyeliner makes it bolder with a wing
     const liner = w.liner && s.blink < 0.5;
     ctx.lineWidth = liner ? LW + 3 : LW;
@@ -359,9 +402,9 @@ function drawBrows(ctx, s) {
   const wk = { thin: 0.62, thick: 1.45, bushy: 1.6 }[kind] || 1, angry = kind === 'angry';
   ctx.lineCap = 'round'; ctx.strokeStyle = col;
   for (const side of [-1, 1]) {
-    const b = clamp01(side < 0 ? s.browL : s.browR);
-    const sad = clamp01(-s.moodV) * (1 - b);
-    const yIn = lerp(lerp(-36, -44, sad), -26, b) + (angry ? 4 + 8 * b : 0), yOut = lerp(-32, -31, b) - (angry ? 5 : 0);
+    const b = clamp01(side < 0 ? s.browL : s.browR), mad = s.angerV;
+    const sad = clamp01(-s.moodV) * (1 - b) * (1 - mad);
+    const yIn = lerp(lerp(-36, -44, sad), -26, b) + (angry ? 4 + 8 * b : 0) + 14 * mad, yOut = lerp(-32, -31, b) - (angry ? 5 : 0) - 8 * mad;
     const xIn = side * 28, xOut = side * 98;
     ctx.globalAlpha = lerp(0.35, 1, b);
     ctx.lineWidth = lerp(4.5, 13, b) * wk + s.uni * 5;
@@ -399,10 +442,28 @@ function drawBrows(ctx, s) {
 }
 
 const GRIN = new Path2D('M -38 110 Q 0 122 38 110 Q 32 146 0 148 Q -32 146 -38 110 Z');
-function drawMouth(ctx, s) {
+function drawMouth(ctx, s, time) {
   const m = s.moodV, y = 120, paint = s.who.lip, lip = paint || s.who.skin.lip;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = INK; ctx.lineWidth = LW;
   const kind = s.mouth;
+  if (kind === 'grit') { // clenched teeth
+    const t = s.teeth, p = new Path2D(); p.roundRect(-33, 107, 66, 24, 10);
+    ctx.fillStyle = t >= 1 ? '#ffffff' : mix('#e2b948', '#ffffff', smooth(clamp01(t))); ctx.fill(p);
+    ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(58,39,71,0.6)';
+    ctx.beginPath(); ctx.moveTo(-31, 119); ctx.lineTo(31, 119);
+    for (const x of [-17, -6, 6, 17]) { ctx.moveTo(x, 109); ctx.lineTo(x, 129); }
+    ctx.stroke();
+    ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke(p);
+    return;
+  }
+  if (kind === 'sob') { // a wobbling, wailing open frown
+    const wob = Math.sin((time || 0) * 15) * 2.5;
+    const p = new Path2D(`M -32 ${134 + wob} Q 0 ${96 - wob} 32 ${134 + wob} Q 0 ${142 + wob} -32 ${134 + wob} Z`);
+    ctx.fillStyle = '#7a2535'; ctx.fill(p);
+    ctx.save(); ctx.clip(p); ell(ctx, 0, 140 + wob, 16, 9); ctx.fillStyle = '#ff8fa8'; ctx.fill(); ctx.restore();
+    ctx.stroke(p);
+    return;
+  }
   if (kind === 'grin') {
     const p = GRIN, t = s.teeth, over = clamp01((t - 1) / 0.4);
     ctx.fillStyle = '#7a2535'; ctx.fill(p);
@@ -620,6 +681,58 @@ function drawWrinkleLines(ctx, s) {
   }
 }
 
+// where a tool hurt the skin: a burn, a bruise or a rash (mood.js HURT_KIND)
+function drawHurts(ctx, s) {
+  for (const h of s.hurts) {
+    const k = easeOutBack(clamp01(h.t / 0.3));
+    if (k <= 0) continue;
+    if (h.kind === 'burn') {
+      ell(ctx, h.x, h.y, 17 * k, 13 * k); ctx.fillStyle = 'rgba(255,70,90,0.45)'; ctx.fill();
+      ell(ctx, h.x, h.y, 9 * k, 7 * k); ctx.fillStyle = 'rgba(120,30,40,0.5)'; ctx.fill();
+      ell(ctx, h.x - 3 * k, h.y - 3 * k, 3 * k, 2 * k); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill();
+    } else if (h.kind === 'bruise') {
+      ell(ctx, h.x, h.y, 17 * k, 14 * k); ctx.fillStyle = 'rgba(170,90,205,0.55)'; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(255,130,170,0.6)'; ctx.stroke();
+      ell(ctx, h.x + 2, h.y + 1, 9 * k, 7 * k); ctx.fillStyle = 'rgba(120,45,140,0.5)'; ctx.fill();
+    } else { // rash: a few angry red dots
+      ell(ctx, h.x, h.y, 17 * k, 13 * k); ctx.fillStyle = 'rgba(255,90,110,0.3)'; ctx.fill();
+      ctx.fillStyle = 'rgba(230,50,70,0.6)';
+      for (const [dx, dy, r] of [[-6, -4, 3.5], [5, -6, 3], [7, 5, 3.5], [-4, 6, 3], [1, 0, 2.5]]) { ell(ctx, h.x + dx * k, h.y + dy * k, r * k, r * k); ctx.fill(); }
+    }
+  }
+}
+// tears: a stream down from each watering eye, with drops running down it
+function drawTears(ctx, s, time) {
+  for (let i = 0; i < 2; i++) {
+    const a = Math.max(s.cryV, s.tears[i]);
+    if (a < 0.03) continue;
+    const side = i ? 1 : -1, x0 = side * (EYE.x + 10), y0 = EYE.y + 16, len = 40 + 90 * a;
+    ctx.save(); ctx.globalAlpha = Math.min(1, a * 2); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(x0 + side * 12, y0 + len * 0.5, x0 + side * 6, y0 + len);
+    ctx.lineWidth = 13; ctx.strokeStyle = 'rgba(58,39,71,0.35)'; ctx.stroke();
+    ctx.lineWidth = 9; ctx.strokeStyle = '#9fe2ff'; ctx.stroke();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#e8fbff'; ctx.stroke();
+    const k = (time * 1.3 + i * 0.5) % 1, dy = y0 + len + 34 * k;
+    ctx.globalAlpha *= 1 - k;
+    ctx.beginPath(); ctx.moveTo(x0 + side * 6, dy - 12); ctx.quadraticCurveTo(x0 + side * 6 + 8, dy, x0 + side * 6, dy + 6); ctx.quadraticCurveTo(x0 + side * 6 - 8, dy, x0 + side * 6, dy - 12);
+    ctx.fillStyle = '#9fe2ff'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = INK; ctx.stroke();
+    ctx.restore();
+  }
+}
+// the cartoon anger mark: four red curves throbbing on the forehead
+function drawVein(ctx, s, time) {
+  const k = 0.9 + 0.12 * Math.sin(time * 12), a = clamp01((s.angerV - 0.45) * 3);
+  ctx.save(); ctx.translate(-92, -128); ctx.rotate(-0.2); ctx.scale(k, k); ctx.globalAlpha = a;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    ctx.moveTo(sx * 5, sy * 17); ctx.quadraticCurveTo(sx * 5, sy * 5, sx * 17, sy * 5);
+  }
+  ctx.lineWidth = 10; ctx.strokeStyle = INK; ctx.stroke();
+  ctx.lineWidth = 5.5; ctx.strokeStyle = '#ff4d6d'; ctx.stroke();
+  ctx.restore();
+}
+
 function drawHead(ctx, s, time, dirtImg) {
   const w = s.who, sk = w.skin;
   const j = s.jaw, chin = jawSegs(j)[3][5];
@@ -649,6 +762,12 @@ function drawHead(ctx, s, time, dirtImg) {
     ctx.globalAlpha = 1;
   }
   drawSpots(ctx, s);
+  drawHurts(ctx, s);
+  if (s.angerV > 0.02) { // seeing red: the face flushes from the forehead down
+    const g = ctx.createLinearGradient(0, -210, 0, 150);
+    g.addColorStop(0, `rgba(255,60,70,${0.5 * s.angerV})`); g.addColorStop(1, `rgba(255,60,70,${0.1 * s.angerV})`);
+    ctx.fillStyle = g; ctx.fill(hp);
+  }
   ctx.restore();
   ctx.lineWidth = LW; ctx.strokeStyle = INK; ctx.stroke(hp);
   if (j > 0.6 && s.nick < 0.05) {
@@ -670,18 +789,21 @@ function drawHead(ctx, s, time, dirtImg) {
   drawScars(ctx, s, time);
   drawCircles(ctx, s);
   drawEyes(ctx, s);
+  drawTears(ctx, s, time);
   drawBrows(ctx, s);
+  if (s.angerV > 0.45) drawVein(ctx, s, time);
   drawNose(ctx, w.nose, s.nose, sk);
   if (w.glasses) drawGlasses(ctx, w.glasses, w.eyeSize || 1);
   if (w.piercings) drawPiercings(ctx);
   if (w.mole && !w.mustache) { ell(ctx, w.mole * 48, 104, 4.5, 4.5); ctx.fillStyle = '#4a2a24'; ctx.fill(); }
-  drawMouth(ctx, s);
+  drawMouth(ctx, s, time);
   if (w.mustache) drawMustache(ctx, w);
   const blush = (w.blush || 0.16) + clamp01(s.moodV) * 0.4 + s.flush * 0.45;
   ctx.fillStyle = `rgba(255,105,125,${Math.min(0.7, blush)})`;
   for (const side of [-1, 1]) { ell(ctx, side * 96, 66, w.cheeks ? 30 : 24, w.cheeks ? 17 : 13); ctx.fill(); }
   if (w.cheeks) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; for (const side of [-1, 1]) { ell(ctx, side * 90 - 6, 56, 9, 5, -0.3); ctx.fill(); } }
   drawHair(ctx, s);
+  drawPierced(ctx, s);
   if (dirtImg && s.dirtAlpha > 0) {
     ctx.globalAlpha = s.dirtAlpha;
     ctx.drawImage(dirtImg, DIRT_BOX.x, DIRT_BOX.y, DIRT_BOX.w, DIRT_BOX.h);
@@ -722,7 +844,16 @@ function drawHead(ctx, s, time, dirtImg) {
 
 export const DIRT_BOX = { x: -200, y: -250, w: 400, h: 500 };
 
+// a dyed patient is drawn with the dye's colour in place of their own (the look object is
+// shared with the "before" copy, so it is put back right after)
 export function drawPatient(ctx, s, time, dirtImg) {
+  const w = s.who;
+  if (!s.dye) { drawPatientNow(ctx, s, time, dirtImg); return; }
+  const c = w.hair, hi = w.hairHi, h = hairNow(s);
+  w.hair = h.c; w.hairHi = h.hi;
+  try { drawPatientNow(ctx, s, time, dirtImg); } finally { w.hair = c; w.hairHi = hi; }
+}
+function drawPatientNow(ctx, s, time, dirtImg) {
   drawChair(ctx);
   if (s.glow > 0.01) {
     const g = G(ctx);

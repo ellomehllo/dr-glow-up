@@ -4,7 +4,7 @@
 // over the face on its own.
 import { Tool, drawHand } from './base.js';
 import { Poly, rand, TAU } from '../draw.js';
-import { INK, applyHead, onFace } from '../patient.js';
+import { INK, applyHead, onFace, eyeSide } from '../patient.js';
 
 const REACH = 56; // cells this close to the sponge count as washed
 const DONE = 0.9;
@@ -63,6 +63,7 @@ export class ScrubTool extends Tool {
     this.pos = { x: to.x + (this.moving ? Math.sin(g.time * 26) * 9 : 0), y: to.y + (this.moving ? Math.cos(g.time * 26) * 6 : 0) };
     g.s.lookAt = { x: to.x, y: to.y };
     if (this.moving) g.react('happy', 0.25, 'grin');
+    if (pos) { const e = eyeSide(g.s, to.x, to.y); if (e >= 0) g.sting(e); } // soap in the eye
     const w = g.head(this.pos.x, this.pos.y);
     this.acc += dt;
     while (this.acc > 0.05) { this.acc -= 0.05; if (this.moving) g.fx.bubbles(w.x, w.y + 10, 1, 34); }

@@ -1,7 +1,8 @@
-// Patients: every level (and every retry) brings in someone new. Ten characters (goth,
-// bodybuilder, bookworm, brainiac, foodie, punk, bully, gamer, glam, grandpa) plus
-// regular patients in a clinic gown, dealt from a shuffled deck so everyone shows up
-// before anyone repeats. Skin tone is random for all of them. A look is a plain object
+// Patients: every level has its own patient (patientFor), the same one on every retry.
+// Ten characters (goth, bodybuilder, bookworm, brainiac, foodie, punk, bully, gamer,
+// glam, grandpa) plus regular patients in a clinic gown, dealt down the levels from a
+// shuffled deck so everyone shows up before anyone repeats, and never the same kind
+// twice in a row. Skin tone, hair colour and the rest come from the level's seed. A look is a plain object
 // of colours and small choices that patient.js, hair.js and outfits.js draw from:
 //   build      skinny | medium | chubby | broad | huge (shoulders, neck, arms)
 //   face       {sx, sy} head proportions
@@ -9,7 +10,18 @@
 //   eyeSize, lids (droop), liner, lashes, bags, brows, nose, lip, cheeks, glasses,
 //   piercings, earring, mustache, wrinkles, blush, mouth (resting mouth)
 //   outfit     {type, c, d, a, pat, print}; extra: headset | choker
-import { pick, rand } from './draw.js';
+// every random choice here goes through R, so a seed can stand in for Math.random
+let R = Math.random;
+const pick = (arr) => arr[(R() * arr.length) | 0];
+const rand = (a, b) => a + R() * (b - a);
+function seeded(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 const SKINS = [
   { base: '#ffe3d2', shade: '#f6c6ad', deep: '#e7a88a', lip: '#e57a86', freckle: '#d9906f' },
@@ -58,7 +70,7 @@ function apart(a, b) {
   return Math.abs(lum(a) - lum(b)) >= 0.18 || Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) >= 90;
 }
 function weighted(list) {
-  let r = Math.random() * list.reduce((a, x) => a + (x.w || 1), 0);
+  let r = R() * list.reduce((a, x) => a + (x.w || 1), 0);
   for (const x of list) { r -= x.w || 1; if (r <= 0) return x; }
   return list[list.length - 1];
 }
@@ -90,7 +102,7 @@ const CHARACTERS = {
   }),
   bookworm: () => ({
     build: 'skinny', face: { sx: 0.95, sy: 1.02 }, hairs: NATURAL, style: 'neat', eyeSize: 1.12, glasses: 'round', nose: 'button',
-    freckles: Math.random() < 0.7, outfit: { type: 'vest', c: pick(['#79b98a', '#b65a6c', '#5c7bc4']), a: '#e2463f' },
+    freckles: R() < 0.7, outfit: { type: 'vest', c: pick(['#79b98a', '#b65a6c', '#5c7bc4']), a: '#e2463f' },
   }),
   brainiac: () => ({
     build: 'medium', face: { sx: 0.96, sy: 1.08 }, hairs: NATURAL, style: 'messy', glasses: 'square', nose: 'long',
@@ -124,31 +136,44 @@ const CHARACTERS = {
   }),
 };
 const KINDS = Object.keys(CHARACTERS);
+export const PATIENT_KINDS = [...KINDS, 'regular'];
 
 function regular() {
   return {
     build: pick(['skinny', 'medium', 'medium', 'chubby']), face: { sx: rand(0.95, 1.05), sy: rand(0.97, 1.04) },
     hairs: [...NATURAL, DYE.pink, DYE.blue], style: pick(['curly', 'afro', 'spiky', 'wavy', 'bob']),
-    lashes: Math.random() < 0.5, earring: Math.random() < 0.4 ? 'gold' : null,
+    lashes: R() < 0.5, earring: R() < 0.4 ? 'gold' : null,
     outfit: { type: 'gown', ...pick(GOWNS) },
   };
 }
 
-// a shuffled deck: all ten characters and two regular patients, then reshuffle
-let deck = [];
-let last = '';
-function deal() {
-  if (!deck.length) {
-    deck = [...KINDS, 'regular', 'regular'];
-    for (let i = deck.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [deck[i], deck[j]] = [deck[j], deck[i]]; }
-    if (deck[deck.length - 1] === last && deck.length > 1) [deck[0], deck[deck.length - 1]] = [deck[deck.length - 1], deck[0]];
+// the kind of patient on each level: shuffled decks of all ten characters and two
+// regular patients, dealt down the levels with no kind twice in a row
+const SEQ = [];
+{
+  const D = seeded(20261109);
+  while (SEQ.length < 120) {
+    const deck = [...KINDS, 'regular', 'regular'];
+    for (let i = deck.length - 1; i > 0; i--) { const j = (D() * (i + 1)) | 0; [deck[i], deck[j]] = [deck[j], deck[i]]; }
+    for (let i = 0; i < deck.length; i++) {
+      // no repeat of the one before: swap in a later card
+      if (deck[i] === SEQ[SEQ.length - 1]) {
+        const j = deck.findIndex((x, k) => k > i && x !== deck[i]);
+        if (j > 0) [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+      SEQ.push(deck[i]);
+    }
   }
-  return deck.pop();
+}
+export const kindFor = (level) => SEQ[level % SEQ.length];
+// level n's patient: always the same person (kind overrides who it is, for testing)
+export function patientFor(level, kind = kindFor(level)) {
+  R = seeded(level * 7717 + 31);
+  try { return randomPatient(kind); } finally { R = Math.random; }
 }
 
-export function randomPatient(kind = deal()) {
-  last = kind;
-  const si = (Math.random() * SKINS.length) | 0;
+export function randomPatient(kind = pick(PATIENT_KINDS)) {
+  const si = (R() * SKINS.length) | 0;
   const skin = SKINS[si];
   const base = kind === 'regular' ? regular() : CHARACTERS[kind]();
   const hair = hairFor(skin, base.hairs);
@@ -158,14 +183,13 @@ export function randomPatient(kind = deal()) {
     // brows follow the hair, except dyed hair keeps natural dark brows
     brow: grey ? hair.c : dyed || base.darkBrows ? '#2c1f24' : mix(hair.c, '#2a1a20', 0.45),
     eye: pick(EYES),
-    freckles: base.freckles ?? (si <= 3 && Math.random() < 0.35),
-    mole: Math.random() < 0.22 ? (Math.random() < 0.5 ? -1 : 1) : 0,
+    freckles: base.freckles ?? (si <= 3 && R() < 0.35),
+    mole: R() < 0.22 ? (R() < 0.5 ? -1 : 1) : 0,
     eyeSize: 1, lids: 0, lashes: false, brows: 'normal', nose: 'normal', glasses: null, earring: null,
-    seed: (Math.random() * 1e9) | 0,
+    seed: (R() * 1e9) | 0,
     tilt: rand(-0.04, 0.04),
     ...base,
   };
   delete who.hairs;
   return who;
 }
-export const PATIENT_KINDS = [...KINDS, 'regular'];

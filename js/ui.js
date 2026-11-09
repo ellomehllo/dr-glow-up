@@ -1,14 +1,17 @@
 // DOM overlay, kept nearly text-free: level badge, AURA meter, treatment badges, a hold
 // prompt with its progress meter (fill, sweet-zone band, star marker) and first-time
-// hand hint, toasts, verdict stickers, a level splash, and the results card with the
-// before/after slider. Line icons only (icons.js).
+// hand hint, the tool kit (a button over the prompt that opens a tray of every
+// treatment; locked ones are empty slots; a style row below), the style card (dye
+// swatches, piercing cost, a done button), toasts, verdict stickers, a level splash,
+// the results card with the before/after slider, and the new-tool pop-up. Line icons
+// for controls, drawn art for tools (icons.js, toolart.js); no emoji.
 import { ICONS, STAR } from './icons.js';
 import { RANKS } from './config.js';
 
 const VERDICT = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!' };
 
 export class UI {
-  constructor(root, { onMute, onAgain, onNext, onSplit, onGesture }) {
+  constructor(root, { onMute, onAgain, onNext, onSplit, onGesture, onKit, onKitPick, onKitClose, onDye, onStyleDone, onUnlockPlay }) {
     this.root = root;
     // logo letters; `o` keeps the wave delay running on across words
     const letters = (w, o = 0) => [...w].map((c, i) => `<span style="--i:${i + o}" aria-hidden="true">${c}</span>`).join('');
@@ -31,26 +34,54 @@ export class UI {
       </div>
       <div class="splash" aria-live="polite"><div class="sp-in"><span class="sp-ch"></span><span class="sp-k">LEVEL</span><b class="sp-n">1</b></div><div class="sp-new"></div></div>
       <div class="dock">
-        <div class="card">
-          <div class="prompt">
-            <div class="pr-row"><span class="pr-ico"></span><span class="pr-text"></span><span class="pr-ghost">${ICONS.hand}</span></div>
-            <div class="meter"><div class="mt-zone"></div><div class="mt-fill"></div><div class="mt-star">${STAR}</div></div>
+        <div class="dock-in">
+          <button class="kit" data-ui type="button" aria-label="Tool kit" aria-expanded="false" aria-controls="kit-sheet">${ICONS.kit}<span class="kit-n" hidden></span></button>
+          <div class="card">
+            <div class="prompt">
+              <div class="pr-row"><span class="pr-ico"></span><span class="pr-text"></span><span class="pr-ghost">${ICONS.hand}</span></div>
+              <div class="meter"><div class="mt-zone"></div><div class="mt-fill"></div><div class="mt-star">${STAR}</div></div>
+              <div class="styler">
+                <div class="swatches" role="radiogroup" aria-label="Hair colour"></div>
+                <span class="sty-cost" role="status"></span>
+                <button class="sty-done" data-ui type="button" aria-label="Done styling">${ICONS.check}</button>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
+      <div class="tray">
+        <div class="tray-scrim" data-ui></div>
+        <section class="tray-sheet" id="kit-sheet" data-ui role="dialog" aria-label="Tool kit">
+          <header class="tray-head"><span class="tray-ico">${ICONS.kit}</span><b>KIT</b><button class="tray-x" data-ui type="button" aria-label="Close the kit">${ICONS.close}</button></header>
+          <ol class="slots"></ol>
+          <div class="tray-sub"><span>STYLE</span></div>
+          <ol class="slots styles" aria-label="Style"></ol>
+        </section>
       </div>
       <div class="toast"></div>
       <div class="stamp"><div class="st-in"><div class="st-burst"></div><div class="st-verdict"></div><div class="st-score"></div></div></div>
       <div class="ba">
         <input class="ba-range" data-ui type="range" min="0" max="1000" value="0" aria-label="Before and after">
       </div>
+      <div class="unlock" role="dialog" aria-modal="true" aria-labelledby="ul-k">
+        <div class="ul-scrim" data-ui></div>
+        <div class="ul-card" data-ui>
+          <button class="ul-x" data-ui type="button" aria-label="Close">${ICONS.close}</button>
+          <div class="ul-art"><span class="ul-rays"></span><span class="ul-ico"></span></div>
+          <b class="ul-k" id="ul-k">NEW TOOL!</b>
+          <span class="ul-name"></span>
+          <button class="ul-play" data-ui type="button">${ICONS.play}<span>PLAY</span></button>
+        </div>
+      </div>
       <section class="results" data-ui aria-live="polite">
+        <p class="rs-say"></p>
         <div class="rs-badge"><span class="rs-rank"></span></div>
         <div class="rs-aura"><b></b><span class="rs-best">${ICONS.star}<span></span></span></div>
         <div class="rs-near"></div>
         <ol class="rs-bars"></ol>
         <div class="rs-new"></div>
         <div class="rs-btns">
-          <button class="again" data-ui type="button" aria-label="Try again with a new patient">${ICONS.again}</button>
+          <button class="again" data-ui type="button" aria-label="Try again">${ICONS.again}</button>
           <button class="next" data-ui type="button" aria-label="Next level">${ICONS.next}</button>
         </div>
       </section>`;
@@ -65,7 +96,11 @@ export class UI {
       stamp: q('.stamp'), stVerdict: q('.st-verdict'), stScore: q('.st-score'),
       ba: q('.ba'), range: q('.ba-range'), results: q('.results'), rsBadge: q('.rs-badge'), rsRank: q('.rs-rank'),
       rsAura: q('.rs-aura b'), rsBest: q('.rs-best'), rsBestN: q('.rs-best span'), rsNear: q('.rs-near'), rsBars: q('.rs-bars'),
-      again: q('.again'), next: q('.next'),
+      again: q('.again'), next: q('.next'), rsSay: q('.rs-say'),
+      kit: q('.kit'), kitN: q('.kit-n'), tray: q('.tray'), scrim: q('.tray-scrim'), sheet: q('.tray-sheet'),
+      trayX: q('.tray-x'), slots: q('.slots'), styleSlots: q('.slots.styles'),
+      swatches: q('.swatches'), styCost: q('.sty-cost'), styDone: q('.sty-done'),
+      unlock: q('.unlock'), ulScrim: q('.ul-scrim'), ulX: q('.ul-x'), ulIco: q('.ul-ico'), ulName: q('.ul-name'), ulPlay: q('.ul-play'),
     };
     const e = this.el;
     this.muted = false;
@@ -77,8 +112,28 @@ export class UI {
     e.again.addEventListener('click', () => { onGesture && onGesture(); onAgain(); });
     e.next.addEventListener('click', () => { onGesture && onGesture(); onNext(); });
     e.range.addEventListener('input', () => onSplit(e.range.value / 1000));
+    // the kit: the button asks the game (it may be busy), a slot picks that treatment
+    this.kitOpen = false;
+    e.kit.addEventListener('click', () => { onGesture && onGesture(); onKit(); });
+    e.scrim.addEventListener('click', () => onKitClose());
+    e.trayX.addEventListener('click', () => onKitClose());
+    e.sheet.addEventListener('click', (ev) => {
+      const b = ev.target.closest('.slot[data-id]');
+      if (!b || b.disabled) return;
+      if (!onKitPick(b.dataset.id)) this.shake(b);
+    });
+    // the style card: a dye swatch, or done
+    e.swatches.addEventListener('click', (ev) => { const b = ev.target.closest('.sw[data-dye]'); if (b) onDye(b.dataset.dye); });
+    e.styDone.addEventListener('click', () => onStyleDone());
+    // the new-tool pop-up
+    e.ulPlay.addEventListener('click', () => { onGesture && onGesture(); this.hideUnlock(); onUnlockPlay(); });
+    for (const el of [e.ulX, e.ulScrim]) el.addEventListener('click', () => this.hideUnlock());
+    window.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Escape') return;
+      if (this.unlockOpen) this.hideUnlock(); else if (this.kitOpen) onKitClose();
+    });
     // keep the one-input rule honest: UI controls never start a hold
-    for (const el of [e.mute, e.again, e.next, e.range, e.results]) el.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    for (const el of [e.mute, e.again, e.next, e.range, e.results, e.kit, e.scrim, e.sheet, e.swatches, e.styDone, e.unlock]) el.addEventListener('pointerdown', (ev) => ev.stopPropagation());
     this.stampTimer = 0; this.toastTimer = 0; this.splashTimer = 0;
     // the overlay never scrolls (a focused button sliding off-screen must not drag it)
     root.addEventListener('scroll', () => { root.scrollTop = 0; root.scrollLeft = 0; });
@@ -100,12 +155,17 @@ export class UI {
     this.el.lvls.classList.remove('pop'); void this.el.lvls.offsetWidth; this.el.lvls.classList.add('pop');
   }
 
-  // one badge per treatment of the level; one that is new on this level gets a NEW tag
+  // one badge per treatment of the level, in the order to do them; one that is new on
+  // this level gets a NEW tag
   setSteps(defs, fresh = []) {
     const e = this.el;
-    e.stepsList.innerHTML = defs.map((d) => `<li class="${fresh.includes(d.id) ? 'new' : ''}" aria-label="${d.name}">${ICONS[d.icon]}</li>`).join('');
+    e.stepsList.innerHTML = defs.map((d, i) => `<li class="${fresh.includes(d.id) ? 'new' : ''}" aria-label="${i + 1}: ${d.name}">${ICONS[d.icon]}<i class="sn" aria-hidden="true">${i + 1}</i></li>`).join('');
     e.steps = [...e.stepsList.querySelectorAll('li')];
   }
+  // the badge to do next gets a marching ring (none: -1)
+  markNext(i) { this.el.steps.forEach((li, k) => li.classList.toggle('next', k === i)); }
+  // a treatment done out of order
+  stepMiss(i) { const li = this.el.steps[i]; if (li) li.classList.add('miss'); }
   // the aura a level needs to pass, marked on the meter
   setPass(p) { this.el.pass.style.left = `${p}%`; }
   // info: { chapter, first (first level of a chapter), boss, fresh: [treatment defs] }
@@ -127,7 +187,7 @@ export class UI {
 
   showTool(def, i) {
     const e = this.el;
-    e.card.classList.remove('in');
+    e.card.classList.remove('in', 'pick', 'style');
     void e.card.offsetWidth; // restart the slide-in
     e.prIco.innerHTML = ICONS[def.icon] || '';
     e.prText.textContent = def.prompt;
@@ -136,7 +196,123 @@ export class UI {
     this._sweetKey = null;
     this.setHold(0, def.sweet, def.hold.max);
   }
-  hideTool() { this.el.card.classList.remove('in'); this.el.steps.forEach((li) => li.classList.remove('now')); }
+  hideTool() { this.el.card.classList.remove('in', 'pick', 'style'); this.el.steps.forEach((li) => li.classList.remove('now')); }
+  // between treatments: the card asks for a tool, its meter shows how much of the
+  // patient is done
+  pickPrompt(done) {
+    const e = this.el;
+    e.card.classList.remove('in', 'style');
+    void e.card.offsetWidth;
+    e.card.classList.add('in', 'pick');
+    e.prIco.innerHTML = ICONS.kit;
+    e.steps.forEach((li) => li.classList.remove('now'));
+    this.prompt('PICK A TOOL', true);
+    this._sweetKey = null;
+    this.setHold(done, null, 1);
+  }
+
+  // a style tool out: its prompt, and the swatches (dye) or the running cost (piercing)
+  // o: { dyes: [{ id, name, c, hi }] | null, on: dye id, t: dye progress, cost }
+  showStyle(def, o) {
+    const e = this.el;
+    e.card.classList.remove('in', 'pick', 'style');
+    void e.card.offsetWidth;
+    e.card.classList.add('in', 'style');
+    e.card.dataset.style = def.id;
+    e.prIco.innerHTML = ICONS[def.icon] || '';
+    e.steps.forEach((li) => li.classList.remove('now'));
+    this.prompt(def.prompt, false);
+    e.swatches.innerHTML = (o.dyes || []).map((d) => `<button class="sw${d.id === 'natural' ? ' nat' : ''}" data-ui data-dye="${d.id}" type="button" role="radio" aria-checked="false" aria-label="${d.name}" style="--c:${d.c};--hi:${d.hi}">${d.id === 'natural' ? ICONS.again : ''}</button>`).join('');
+    e.swatches.hidden = !o.dyes;
+    e.styCost.hidden = def.id !== 'pierce';
+    if (o.dyes) this.markDye(o.on);
+    this.styleCost(o.cost || 0);
+    this._sweetKey = null;
+    this.setHold(o.t || 0, null, 1);
+  }
+  hideStyle() { this.el.card.classList.remove('style'); delete this.el.card.dataset.style; }
+  markDye(id) {
+    for (const b of this.el.swatches.children) {
+      const on = b.dataset.dye === id;
+      b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
+    }
+  }
+  // what the piercings so far take off the aura
+  styleCost(cost) {
+    const c = this.el.styCost;
+    c.textContent = cost ? `-${cost}` : '0';
+    c.classList.toggle('neg', cost > 0);
+    c.setAttribute('aria-label', cost ? `Piercings cost ${cost} aura` : 'No piercings');
+  }
+
+  // ---------- new tool pop-up ----------
+  showUnlock(def, lv) {
+    const e = this.el;
+    e.ulIco.innerHTML = ICONS[def.icon] || '';
+    e.ulName.textContent = def.name.toUpperCase();
+    e.ulPlay.setAttribute('aria-label', `Play level ${lv} with the ${def.name.toLowerCase()} tool`);
+    this.unlockOpen = true;
+    e.unlock.classList.add('on');
+    e.ulPlay.focus({ preventScroll: true });
+  }
+  hideUnlock() {
+    const e = this.el;
+    if (!this.unlockOpen) return;
+    this.unlockOpen = false;
+    if (e.unlock.contains(document.activeElement)) document.activeElement.blur();
+    e.unlock.classList.remove('on');
+  }
+
+  // ---------- the kit ----------
+  // list: [{ id, icon, name, state: need | now | done | none | locked, lv }]
+  // styles: [{ id, icon, name, state: style | now, dot: hair colour, tag: aura cost }]
+  setKit(list, styles = []) {
+    const e = this.el;
+    const label = { need: '', now: ', in use', done: ', done', none: ', nothing to fix' };
+    e.slots.innerHTML = list.map((t, i) => {
+      if (t.state === 'locked') {
+        return `<li style="--i:${i}"><span class="slot locked" role="img" aria-label="Locked, opens at level ${t.lv}"><span class="lv">LV ${t.lv}</span></span></li>`;
+      }
+      const off = t.state === 'done' ? ' disabled' : '';
+      return `<li style="--i:${i}"><button class="slot ${t.state}" data-ui data-id="${t.id}" type="button" aria-label="${t.name}${label[t.state]}"${off}>${ICONS[t.icon]}${t.state === 'done' ? `<i class="ok">${ICONS.check}</i>` : ''}</button></li>`;
+    }).join('');
+    e.styleSlots.innerHTML = styles.map((t, i) => {
+      const say = `${t.name}${t.state === 'now' ? ', in use' : ''}${t.tag ? `, costs ${t.tag.slice(1)} aura` : ''}`;
+      return `<li style="--i:${list.length + i}"><button class="slot style ${t.state}" data-ui data-id="${t.id}" type="button" aria-label="${say}">${ICONS[t.icon]}${t.dot ? `<i class="dot" style="--c:${t.dot}"></i>` : ''}${t.tag ? `<i class="tag">${t.tag}</i>` : ''}</button></li>`;
+    }).join('');
+    const left = list.filter((t) => t.state === 'need' || t.state === 'now').length;
+    e.kitN.textContent = String(left);
+    e.kitN.hidden = !left;
+  }
+  // the kit button: shown while playing, dimmed while a treatment is under way,
+  // bouncing while the game waits for a tool
+  kitButton({ on, busy, call }) {
+    const k = this.el.kit;
+    k.classList.toggle('on', on);
+    k.classList.toggle('busy', on && busy);
+    k.classList.toggle('call', on && call && !this.kitOpen);
+  }
+  openKit() {
+    const e = this.el;
+    this.kitOpen = true;
+    e.tray.classList.add('on');
+    e.kit.setAttribute('aria-expanded', 'true');
+    e.kit.classList.remove('call');
+    e.kit.classList.add('open');
+  }
+  closeKit() {
+    const e = this.el;
+    if (!this.kitOpen) return;
+    this.kitOpen = false;
+    if (e.tray.contains(document.activeElement)) document.activeElement.blur();
+    e.tray.classList.remove('on');
+    e.kit.classList.remove('open');
+    e.kit.setAttribute('aria-expanded', 'false');
+  }
+  shake(el = this.el.kit) {
+    el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+    el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
+  }
 
   prompt(text, ghost) {
     const e = this.el;
@@ -194,6 +370,7 @@ export class UI {
 
   showResults(r) {
     const e = this.el;
+    this.closeKit();
     this.root.classList.add('final');
     e.toast.classList.remove('on');
     e.stamp.classList.remove('on');
@@ -210,7 +387,11 @@ export class UI {
         <span class="rb-ico">${ICONS[b.icon]}</span>
         <span class="rb-bar"><i style="--s:${(b.score / 100).toFixed(3)};animation-delay:${(0.5 + i * 0.07).toFixed(2)}s"></i></span>
         <span class="rb-sc">${b.score}</span>
-      </li>`).join('');
+      </li>`).join('') + this.orderRow(r.order, r.bars.length) + this.hurtRow(r.hurt) + this.pierceRow(r.pierce);
+    // what the patient says about it
+    e.rsSay.textContent = r.say ? r.say.text : '';
+    e.rsSay.dataset.feel = r.say ? r.say.feel : '';
+    e.rsSay.hidden = !r.say;
     const unlock = r.unlock || [];
     e.rsNew.innerHTML = unlock.map((d) => `<span class="rs-nw" aria-label="Unlocked: ${d.name}"><b>NEW</b><span class="sp-ico">${ICONS[d.icon]}</span></span>`).join('');
     e.rsNew.hidden = !unlock.length;
@@ -221,6 +402,39 @@ export class UI {
     e.results.classList.remove('in'); void e.results.offsetWidth;
     e.results.classList.add('in');
     e.ba.classList.add('in');
+  }
+  // results: how many treatments were done in order, and what the rest cost
+  orderRow(o, k) {
+    if (!o) return '';
+    const right = o.total - o.misses;
+    const label = o.misses ? `Order: ${right} of ${o.total} in order, minus ${o.penalty}` : 'Order: all in order';
+    return `
+      <li class="order${o.misses ? ' miss' : ''}" aria-label="${label}">
+        <span class="rb-ico">${ICONS.order}</span>
+        <span class="rb-bar"><i style="--s:${(right / o.total).toFixed(3)};animation-delay:${(0.5 + k * 0.07).toFixed(2)}s"></i></span>
+        <span class="rb-sc">${o.misses ? `-${o.penalty}` : ICONS.check}</span>
+      </li>`;
+  }
+  // results: what hurting the patient cost (one mark per hurt, a bigger one for an eye)
+  hurtRow(h) {
+    if (!h || !h.list.length) return '';
+    const eyes = h.list.filter((k) => k === 'eye').length;
+    return `
+      <li class="order miss hurt" aria-label="Hurt the patient ${h.list.length} times${eyes ? `, ${eyes} in the eye` : ''}, minus ${h.minus}">
+        <span class="rb-ico">${ICONS.bandage}</span>
+        <span class="rb-studs">${h.list.map((k) => `<b class="${k}"></b>`).join('')}</span>
+        <span class="rb-sc">-${h.minus}</span>
+      </li>`;
+  }
+  // results: what the piercings cost (one stud per piercing)
+  pierceRow(p) {
+    if (!p || !p.count) return '';
+    return `
+      <li class="order miss pierce" aria-label="Piercings: ${p.count}, minus ${p.minus}">
+        <span class="rb-ico">${ICONS.pierce}</span>
+        <span class="rb-studs">${'<b></b>'.repeat(p.count)}</span>
+        <span class="rb-sc">-${p.minus}</span>
+      </li>`;
   }
   // free screen area left around the UI (CSS px), used by the camera framing
   obstruction(mode) {
@@ -238,6 +452,8 @@ export class UI {
       const t = this.el.title;
       return { top, bottom: Math.min(H * 0.42, t.offsetHeight + 40), left: 0, right: 0 };
     }
+    // the open kit covers the bottom: keep the whole face in view above it
+    if (mode === 'kit') return { top, bottom: H - this.el.sheet.offsetTop + 14, left: 0, right: 0 };
     return { top, bottom: this.el.dock.offsetHeight + 14, left: 0, right: 0 };
   }
   // position the slider strip over the free area
@@ -260,12 +476,15 @@ export class UI {
     if (this.root.contains(document.activeElement)) document.activeElement.blur();
     this.root.scrollTop = 0; this.root.scrollLeft = 0;
     this.root.classList.remove('final');
+    this.closeKit();
+    this.hideUnlock();
+    this.hideStyle();
     e.results.classList.remove('in');
     e.ba.classList.remove('in');
     e.stamp.classList.remove('on');
     e.toast.classList.remove('on');
     e.card.classList.remove('in');
-    e.steps.forEach((li) => li.classList.remove('ok', 'bad', 'now'));
+    e.steps.forEach((li) => li.classList.remove('ok', 'bad', 'now', 'next', 'miss'));
     this.setAura(0);
     this.hidePrompt();
   }

@@ -54,8 +54,8 @@ export class FX {
   puff(x, y, n = 2, col = '255,255,255') {
     for (let i = 0; i < n; i++) this._add({ k: 'puff', x: x + rand(-8, 8), y: y + rand(-8, 8), vx: rand(-60, 60), vy: rand(-70, -10), life: rand(0.4, 0.7), size: rand(10, 20), col, drag: 3 });
   }
-  text(x, y, str, col = '#ffc93c', size = 34) {
-    this._add({ k: 'txt', x, y, vx: 0, vy: -70, life: 0.85, str, col, size, rot: rand(-0.22, 0.22), drag: 2 });
+  text(x, y, str, col = '#ffc93c', size = 34, life = 0.85) {
+    this._add({ k: 'txt', x, y, vx: 0, vy: -70 * (0.85 / life), life, str, col, size, rot: rand(-0.22, 0.22) * (life > 1 ? 0.4 : 1), drag: 2 });
   }
   drops(x, y, n = 5, col = '#ff7d9a') {
     for (let i = 0; i < n; i++) {

@@ -1,5 +1,5 @@
 // Data-driven treatments and levels. A new treatment = one entry in TOOLS plus one module
-// registered in js/tools/index.js; levels list which treatments they use, in order.
+// registered in js/tools/index.js; levels list which treatments the patient needs.
 //
 // view:      stage point to centre {x, y} and radius r to fit into the free screen area;
 //            rel: y is relative to the head's current height (it moves while mewing).
@@ -77,15 +77,18 @@ export const TOOLS = [
 ];
 
 // ---------- 50 levels in 5 chapters of 10 ----------
-// Every chapter unlocks new treatments; a level that brings one in is lighter, the
-// next two practise it, and the rest mix it with what came before (the chapter's own
-// treatments come up more often). Level 10 of each chapter is a boss: everything the
-// chapter unlocked, more treatments, and a higher pass mark.
+// Every patient comes in dirty, so every level starts with the wash and ends with the
+// glow; the treatments in between are the level's own, in its own shuffled order.
+// A level that brings in a new treatment has just that one between the wash and the
+// glow; the next two practise it mixed in with older ones, and the rest mix it with
+// what came before (the chapter's own treatments come up more often). Level 10 of each
+// chapter is a boss: everything the chapter unlocked, more treatments, and a higher
+// pass mark.
 // Difficulty climbs in a sawtooth: each chapter starts a little easier than the last
 // boss. It narrows the sweet zones (zone), speeds up the bars (speed), nudges sweet
-// centres around (jitter), and brings more pimples, scars, spots and wrinkles.
-// Generated from a fixed seed per level, so a level always has the same treatments;
-// only the patient changes on every try.
+// centres around (jitter), and brings more dirt, pimples, scars, spots and wrinkles.
+// Generated from a fixed seed per level, so a level always has the same treatments in
+// the same order (and the same patient, see people.js patientFor).
 export const CHAPTER_SIZE = 10;
 // 0-based level where each treatment first shows up
 export const INTRO = {
@@ -95,9 +98,18 @@ export const INTRO = {
   teeth: 30, rasp: 34, // chapter 4
   iron: 40, // chapter 5
 };
-// treatments run in this order within a level
-const ORDER = ['scrub', 'laser', 'pop', 'gold', 'circles', 'iron', 'nose', 'teeth', 'chisel', 'mew', 'rasp', 'polish'];
-const SCORED = ORDER.filter((id) => id !== 'scrub' && id !== 'polish');
+// the tool kit: every treatment, in the order they unlock (the slots fill up left to
+// right as the player progresses; ties keep the TOOLS order)
+export const KIT = TOOLS.map((t) => t.id).sort((a, b) => INTRO[a] - INTRO[b]);
+// style tools: in the kit from the start, used between treatments, outside the order.
+// Hair colour is free; every piercing costs aura (more away from the usual spots).
+export const STYLES = [
+  { id: 'dye', name: 'Hair colour', prompt: 'RUB THE HAIR', icon: 'dye', view: { x: 0, y: -96, r: 250, rel: true } },
+  { id: 'pierce', name: 'Piercing', prompt: 'TAP TO PIERCE', icon: 'pierce', view: { x: 0, y: -4, r: 250, rel: true } },
+];
+// every scored treatment in a fixed reference order; each level shuffles its own set
+// into the order the player has to follow (shown in the HUD, auto-played by Space)
+const SCORED = ['laser', 'pop', 'gold', 'circles', 'iron', 'nose', 'teeth', 'chisel', 'mew', 'rasp'];
 const PER_CHAPTER = [2, 2, 3, 3, 4]; // scored treatments in a chapter's early levels
 
 function rng(seed) {
@@ -111,44 +123,61 @@ function rng(seed) {
 const lerp = (a, b, t) => a + (b - a) * t;
 const round = (v, k) => Math.round(v * k) / k;
 
-function makeLevel(n) {
+// a level's own order: a seeded shuffle, never the same as the level before when they
+// have the same treatments
+function orderFor(n, ids, prev) {
+  const R = rng(n * 104729 + 7);
+  let out = ids;
+  for (let tries = 0; tries < 12; tries++) {
+    out = ids.slice();
+    for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+    if (!prev || out.join() !== prev.join()) break;
+  }
+  return out;
+}
+
+function makeLevel(n, prev) {
   const R = rng(n * 7919 + 101);
   const c = Math.floor(n / CHAPTER_SIZE), k = n % CHAPTER_SIZE, boss = k === CHAPTER_SIZE - 1;
   const pool = SCORED.filter((id) => INTRO[id] <= n);
   const fresh = pool.filter((id) => INTRO[id] === n);
   const recent = pool.filter((id) => n - INTRO[id] >= 1 && n - INTRO[id] <= 2);
   const mine = pool.filter((id) => Math.floor(INTRO[id] / CHAPTER_SIZE) === c);
-  let count = Math.min(pool.length, PER_CHAPTER[c] + (k >= 4 ? 1 : 0) + (boss ? 1 : 0));
-  if (fresh.length) count = Math.min(pool.length, Math.max(2, count - 1));
-  const set = new Set([...fresh, ...recent, ...(boss ? mine : [])]);
-  const rest = pool.filter((id) => !set.has(id));
-  while (set.size < count && rest.length) {
-    const w = rest.map((id) => (mine.includes(id) ? 3 : 1) * (id === 'pop' ? 1.5 : 1));
-    let r = R() * w.reduce((a, b) => a + b, 0), i = 0;
-    for (; i < rest.length - 1; i++) { r -= w[i]; if (r <= 0) break; }
-    set.add(rest.splice(i, 1)[0]);
+  // a new treatment's first level: only that one, so it can be learnt on its own
+  const set = new Set(fresh.length ? fresh : [...recent, ...(boss ? mine : [])]);
+  if (!fresh.length) {
+    const count = Math.min(pool.length, PER_CHAPTER[c] + (k >= 4 ? 1 : 0) + (boss ? 1 : 0));
+    const rest = pool.filter((id) => !set.has(id));
+    while (set.size < count && rest.length) {
+      const w = rest.map((id) => (mine.includes(id) ? 3 : 1) * (id === 'pop' ? 1.5 : 1));
+      let r = R() * w.reduce((a, b) => a + b, 0), i = 0;
+      for (; i < rest.length - 1; i++) { r -= w[i]; if (r <= 0) break; }
+      set.add(rest.splice(i, 1)[0]);
+    }
   }
-  // a wash first on most levels (always on the first few and on bosses), glow last on all
-  const wash = n < 3 || boss || R() < (set.has('pop') ? 0.8 : 0.45);
-  const tools = ORDER.filter((id) => set.has(id) || id === 'polish' || (id === 'scrub' && wash));
+  // the wash always first, the glow always last, the rest shuffled in between
+  const mid = orderFor(n, SCORED.filter((id) => set.has(id)), prev && prev.tools.slice(1, -1));
+  const tools = ['scrub', ...mid, 'polish'];
   const d = Math.max(0, Math.min(1, c * 0.19 + k * 0.03 + (boss ? 0.03 : 0) - (fresh.length ? 0.04 : 0)));
   const since = (id) => Math.max(0, n - INTRO[id]);
   return {
     tools, chapter: c, boss, fresh,
     pass: 50 + 5 * c + (boss ? 5 : 0), // aura needed to unlock the next level
     zone: round(lerp(1.6, 0.75, d), 100), speed: round(lerp(0.85, 1.42, d), 100), jitter: round(lerp(0, 0.07, d), 1000),
-    dirt: wash ? round(lerp(0.45, 1, d), 100) : 0,
+    dirt: round(lerp(0.45, 1, d), 100),
     pimples: Math.min(10, 3 + Math.floor(n / 6) + (n >= 3 && R() < 0.3 ? 1 : 0)),
     scars: Math.min(4, 1 + Math.floor(since('gold') / 5)),
     spots: Math.min(12, 6 + Math.floor(since('laser') / 3)),
     wrinkles: Math.min(6, 3 + Math.floor(since('iron') / 3)),
   };
 }
-export const LEVELS = Array.from({ length: 50 }, (_, n) => makeLevel(n));
+export const LEVELS = [];
+for (let n = 0; n < 50; n++) LEVELS.push(makeLevel(n, LEVELS[n - 1]));
 export const CHAPTERS = LEVELS.length / CHAPTER_SIZE;
 
 export const VIEWS = {
   intro: { x: 0, y: 130, r: 420 },
+  pick: { x: 0, y: -10, r: 300, rel: true }, // the whole face, while choosing a tool
   reveal: { x: 0, y: 70, r: 400, rel: true },
   results: { x: 0, y: 40, r: 330, rel: true },
 };

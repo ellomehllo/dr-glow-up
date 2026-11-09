@@ -1,16 +1,30 @@
-// The run. Fifty levels in five chapters, each with a new patient. One controller drives every
-// treatment of the level in order:
-//   intro | arrive -> transition -> ready <-> holding | brushing -> outro -> next
+// The run. Fifty levels in five chapters, each with a new patient. The player picks each
+// treatment the patient needs from the tool kit, in any order, and one controller drives it:
+//   intro | arrive -> pick -> transition -> ready <-> holding | brushing -> outro -> pick ...
+// The kit holds every treatment; ones not unlocked yet are empty slots, and ones this
+// patient doesn't need say so. A treatment can be swapped for another until it is first
+// pressed; after that it is finished first. Space picks the next one in the level's order.
+// The level's order is the row of badges under the aura: finishing a treatment that
+// wasn't next in that row costs ORDER_PENALTY aura (scoring.js).
 // In `ready` the player presses ON a target (a pimple, a scar, the jaw...) and holds;
 // each target is scored on its own release, and the treatment ends once all of its
 // targets are done. Brush treatments (wash, hair) are dragged over the patient instead.
 // Then the finale (happy hops, sparkle shower, camera flash) and the results screen
 // with a before/after split. Treatments only react through the hooks in tools/base.js.
-import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE } from './config.js';
+// Style tools (hair colour, piercings; style.js) sit in their own row of the kit: picked
+// between treatments, they put the game in `style` until the player is done, and stay
+// out of the order. Piercings cost aura.
+// A treatment pressed where there is nothing to treat hurts the patient there (mood.js):
+// a mark, an ouch in their own words, and aura; an eye hurts most. At the end the patient
+// takes the job by the aura and the hurts, in their own temper: happy hops for a good job,
+// anger, tears, a cold shoulder or grumbling for a bad one.
+import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES } from './config.js';
 import { REGISTRY } from './tools/index.js';
-import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress } from './scoring.js';
-import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
-import { randomPatient } from './people.js';
+import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress, ORDER_PENALTY } from './scoring.js';
+import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, onFace, eyeSide, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
+import { patientFor } from './people.js';
+import { DYES, DYE_RUB, setDye, hairNow, onHair, pierceSpot, pierceCost, PIERCE } from './style.js';
+import { HURT, HURT_KIND, temperOf, lineFor, feelingFor, faceFor, BAD } from './mood.js';
 import { easeIO, rand, TAU } from './draw.js';
 
 const TAP_IGNORE = 0.06; // a release before this much progress is a false start, not a release
@@ -19,6 +33,9 @@ const FINALE = 2.2;
 const ARRIVE = 1.5; // a new patient settles in before the first treatment
 const FINGER = 30; // screen px: the smallest a target's hit area gets
 const WORD = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!' };
+const PLAYING = new Set(['arrive', 'pick', 'transition', 'ready', 'holding', 'brushing', 'outro', 'style']); // the kit button shows
+const BY_ID = Object.fromEntries(TOOLS.map((t) => [t.id, t]));
+const STYLE_BY_ID = Object.fromEntries(STYLES.map((t) => [t.id, t]));
 
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; }
@@ -56,10 +73,20 @@ export class Game {
       bump: (a) => this.director.bump(a),
       toast: (t) => this.ui.toast(t),
       react: (e, d, m) => react(s, e, d, m),
+      hurt: (x, y, kind, free) => this.hurtAt(x, y, kind, free),
+      sting: (side) => this.sting(side),
     };
     this.tools = []; this.defs = [];
     this.buildTools();
     this.entered = new Set();
+    this.used = new Set(); // treatments (index into defs) finished on this patient
+    this.misses = new Set(); // ...of those, the ones done out of order
+    this.inOrder = true; // the current treatment was the next one in the row when picked
+    this.touched = false; // the current treatment has been pressed, so it can't be swapped
+    this.tool = null; this.idx = -1;
+    this.style = null; // the style tool out: { def, down, last } (style mode)
+    this.dyeId = 'pink'; // the dye picked last
+    this.clearHurts();
     this.seenHint = new Set();
     this.mode = 'boot';
     this.modeT = 0;
@@ -81,7 +108,7 @@ export class Game {
     const L = LEVELS[level], has = (id) => L.tools.includes(id);
     const pimples = has('pop') ? shuffle(PIMPLE_SPOTS.slice()).slice(0, L.pimples) : [];
     return {
-      who: randomPatient(kind),
+      who: patientFor(level, kind), // each level has its own patient
       pimples,
       cracks: has('gold') ? some(CRACKS, L.scars) : [],
       spots: has('laser') ? pickSpots(L.spots, pimples) : [],
@@ -121,7 +148,7 @@ export class Game {
   view(v) { return { x: v.x || 0, y: v.y + (v.rel ? headBase(this.s) : 0), r: v.r }; }
 
   // ---------- flow ----------
-  setMode(m) { this.mode = m; this.modeT = 0; }
+  setMode(m) { this.mode = m; this.modeT = 0; this.syncKit(); }
   after(t, fn) { this.timers.push({ t: this.g.time + t, fn }); }
   start() {
     this.setMode('intro');
@@ -130,8 +157,189 @@ export class Game {
     this.ui.setLevel(this.level, this.progress.unlocked);
     this.ui.setSteps(this.defs, LEVELS[this.level].fresh);
     this.ui.setPass(LEVELS[this.level].pass);
+    this.refreshKit();
     this.ui.titleCard(true);
     react(this.s, 'normal', 0.01);
+  }
+
+  // ---------- the kit ----------
+  // every treatment, in unlock order, with what it means for this patient
+  kit() {
+    const reached = Math.max(this.progress.unlocked, this.level + 1); // levels the player has opened
+    return KIT.map((id) => {
+      const t = BY_ID[id], i = this.defs.findIndex((d) => d.id === id);
+      let state = 'need';
+      if (INTRO[id] >= reached) state = 'locked';
+      else if (i < 0) state = 'none';
+      else if (this.used.has(i)) state = 'done';
+      else if (this.tool && i === this.idx) state = 'now';
+      return { id, icon: t.icon, name: t.name, state, lv: INTRO[id] + 1 };
+    });
+  }
+  // the style row of the kit: the one out, the colour the hair has, what piercings cost
+  styleKit() {
+    const s = this.s, cost = pierceCost(s);
+    return STYLES.map((d) => ({
+      id: d.id, icon: d.icon, name: d.name, state: this.style && this.style.def.id === d.id ? 'now' : 'style',
+      dot: d.id === 'dye' && s.dye ? hairNow(s).c : '', tag: d.id === 'pierce' && cost ? `-${cost}` : '',
+    }));
+  }
+  refreshKit() { this.ui.setKit(this.kit(), this.styleKit()); }
+  // a tool can be picked between treatments, or to swap one that hasn't been pressed yet
+  canPick() {
+    const m = this.mode;
+    return m === 'intro' || m === 'arrive' || m === 'pick' || m === 'style' || ((m === 'transition' || m === 'ready') && !this.touched);
+  }
+  syncKit() { this.ui.kitButton({ on: PLAYING.has(this.mode), busy: !this.canPick(), call: this.mode === 'pick' }); }
+  openKit() {
+    if (!this.canPick()) { this.ui.toast('FINISH THIS ONE FIRST'); this.ui.shake(); this.audio.tink(0.5); return; }
+    if (this.mode === 'intro' || this.mode === 'arrive') this.toPick();
+    this.refreshKit();
+    this.ui.openKit();
+    this.syncKit();
+    this.audio.tick();
+    this.director.setObstruction(this.ui.obstruction('kit'));
+  }
+  closeKit() {
+    if (!this.ui.kitOpen) return;
+    this.ui.closeKit();
+    this.syncKit();
+    this.director.setObstruction(this.ui.obstruction('play'));
+  }
+  // a slot in the kit was picked: start that treatment, or say why not (returns false)
+  choose(id) {
+    if (!this.canPick()) { this.ui.toast('FINISH THIS ONE FIRST'); return false; }
+    if (STYLE_BY_ID[id]) return this.chooseStyle(id);
+    const i = this.defs.findIndex((d) => d.id === id);
+    if (i < 0) { this.ui.toast('NOTHING TO FIX'); this.audio.tink(0.5); return false; }
+    if (this.used.has(i)) { this.ui.toast('ALREADY DONE'); return false; }
+    if (this.tool && i === this.idx) { this.closeKit(); return true; } // the one already out
+    if (this.tool) this.tool.exit(); // swapped before it was pressed
+    this.endStyle(false);
+    this.beginTool(i);
+    return true;
+  }
+
+  // ---------- style tools ----------
+  chooseStyle(id) {
+    const def = STYLE_BY_ID[id];
+    if (this.style && this.style.def === def) { this.closeKit(); return true; }
+    if (this.tool) { this.tool.exit(); this.tool = null; this.idx = -1; } // swapped before it was pressed
+    this.ui.closeKit();
+    this.style = { def, down: false, last: null, rub: 0 };
+    const s = this.s;
+    if (id === 'dye' && !(s.dye && s.dye.id === this.dyeId)) setDye(s, DYES.find((d) => d.id === this.dyeId));
+    s.lookAt = null;
+    this.director.go(this.view(def.view), TRANSITION);
+    this.director.setObstruction(this.ui.obstruction('play'));
+    this.ui.titleCard(false);
+    this.ui.showStyle(def, {
+      dyes: id === 'dye' ? DYES.map((d) => ({ id: d.id, name: d.name, c: d.c || s.who.hair, hi: d.hi || s.who.hairHi })) : null,
+      on: this.dyeId, t: id === 'dye' ? s.dye.t : 0, cost: pierceCost(s),
+    });
+    this.ui.markNext(this.nextIdx());
+    this.audio.whoosh(0.1);
+    this.setMode('style');
+    this.refreshKit();
+    return true;
+  }
+  // done styling: back to picking a treatment (or quietly, when one is picked instead)
+  endStyle(back = true) {
+    if (!this.style) return;
+    this.style = null;
+    this.ui.hideStyle();
+    if (back) { this.audio.tick(); this.toPick(); }
+  }
+  // a swatch: the next rubs blend the hair toward that colour
+  pickDye(id) {
+    const d = DYES.find((x) => x.id === id);
+    if (!d || !this.style || this.style.def.id !== 'dye') return;
+    this.dyeId = id;
+    setDye(this.s, d);
+    this.ui.markDye(id);
+    this.ui.setHold(0, null, 1);
+    this.audio.tick();
+    this.refreshKit();
+  }
+  stylePress(src) {
+    const st = this.style;
+    if (src === 'key') { this.endStyle(); return; } // Space: done
+    const q = this.pointer();
+    if (st.def.id === 'dye') { st.down = true; st.last = q; return; }
+    this.pierce(q);
+  }
+  // rubbing the hair blends the dye in, by how far the finger travels over it
+  rubDye() {
+    const st = this.style, s = this.s, q = this.pointer(), last = st.last;
+    st.last = q;
+    if (!last || !s.dye || !onHair(q.x, q.y)) return;
+    const d = Math.hypot(q.x - last.x, q.y - last.y);
+    if (d < 0.5) return;
+    const was = s.dye.t;
+    s.dye.t = Math.min(1, was + d / DYE_RUB);
+    st.rub += d;
+    if (st.rub > 40) {
+      st.rub = 0;
+      this.fx.spark(q.sx, q.sy, { size: rand(9, 14), col: s.dye.to.hi, vy: -60 });
+      this.fx.drops(q.sx, q.sy, 2, s.dye.to.c);
+      this.audio.drip();
+    }
+    this.ui.setHold(s.dye.t, null, 1);
+    if (was < 1 && s.dye.t >= 1) {
+      const c = headToStage(s, 0, -150);
+      this.fx.glitter(c.x, c.y, 16, 320);
+      this.fx.burst(c.x, c.y, 8, 300);
+      this.audio.sparkle();
+      react(s, 'happy', 1.2, 'grin');
+      this.refreshKit();
+    }
+  }
+  // a tap on the head adds a piercing there (aura pays for it); a tap on one takes it out
+  pierce(q) {
+    const s = this.s;
+    const k = s.pierced.findIndex((p) => Math.hypot(p.x - q.x, p.y - q.y) < 13);
+    if (k >= 0) {
+      const p = s.pierced.splice(k, 1)[0], at = headToStage(s, p.x, p.y);
+      this.fx.ring(at.x, at.y, 4, 22, 0.3, '#ffffff', 4);
+      this.fx.text(at.x, at.y - 34, `+${p.cost}`, '#3fe0b5', 24);
+      this.audio.tick();
+    } else {
+      if (eyeSide(s, q.x, q.y) >= 0) { this.hurtAt(q.x, q.y, 'bruise'); this.refreshKit(); return; } // not the eye!
+      const p = pierceSpot(q.x, q.y);
+      if (!p) { this.miss(q); return; }
+      if (s.pierced.length >= PIERCE.max) { this.ui.toast('NO MORE ROOM'); this.audio.tink(0.5); return; }
+      s.pierced.push(p);
+      const at = headToStage(s, p.x, p.y), odd = p.cost > PIERCE.usual;
+      this.fx.ring(at.x, at.y, 3, 26, 0.32, '#ffffff', 5);
+      this.fx.burst(at.x, at.y, 5, 200, { size: rand(8, 12) });
+      this.fx.text(at.x, at.y - 36, `-${p.cost}`, odd ? '#ff7d9a' : '#ffffff', odd ? 30 : 22);
+      this.audio.tink(1.7);
+      this.director.bump(0.25);
+      react(s, 'squeeze', odd ? 0.6 : 0.35, 'wince');
+      if (odd) s.sweat = Math.max(s.sweat, 0.6);
+    }
+    this.updateAura();
+    this.ui.styleCost(pierceCost(s), s.pierced.length);
+    this.refreshKit();
+  }
+  // the first unfinished treatment in the row: the one to do next
+  nextIdx() { return this.defs.findIndex((d, k) => !this.used.has(k)); }
+  // Space: the next treatment in the level's own order
+  chooseNext() {
+    const i = this.nextIdx();
+    if (i >= 0) this.choose(this.defs[i].id);
+  }
+  // between treatments: show the whole face and wait for a tool
+  toPick() {
+    this.tool = null; this.idx = -1; this.p = 0; this.touched = false;
+    this.s.lookAt = null;
+    this.ui.titleCard(false);
+    this.director.go(this.view(VIEWS.pick), TRANSITION);
+    this.director.setObstruction(this.ui.obstruction(this.ui.kitOpen ? 'kit' : 'play'));
+    this.ui.pickPrompt(this.used.size / this.tools.length);
+    this.ui.markNext(this.nextIdx());
+    this.setMode('pick');
+    this.refreshKit();
   }
   startLevel(n, kind) {
     const t0 = performance.now();
@@ -149,8 +357,11 @@ export class Game {
     this.scores = []; this.verdicts = []; this.timers = [];
     this.tScores = []; this.tVerdicts = [];
     this.flash = 0; g.fail = 0; g.hit = 0; g.ghost = -1; g.prog = 0; g.hint = false;
-    this.tool = null; this.idx = -1;
+    this.tool = null; this.idx = -1; this.style = null;
+    this.used = new Set(); this.misses = new Set(); this.inOrder = true; this.touched = false;
+    this.clearHurts();
     this.ui.reset();
+    this.refreshKit();
     this.ui.titleCard(false);
     this.ui.setLevel(n, this.progress.unlocked);
     this.ui.setSteps(this.defs, LEVELS[n].fresh);
@@ -173,19 +384,23 @@ export class Game {
   }
   beginTool(i) {
     const tool = this.tools[i], def = tool.def;
-    this.idx = i; this.tool = tool; this.p = 0; this.sweet = null;
+    this.ui.closeKit();
+    this.inOrder = i === this.nextIdx();
+    this.idx = i; this.tool = tool; this.p = 0; this.sweet = null; this.touched = false;
     this.tScores = []; this.tVerdicts = [];
     this.ghost = !this.seenHint.has(def.id);
     tool.outro = false; tool.outroT = 0;
     tool.enter();
     this.entered.add(tool);
     this.director.go(this.view(def.view), TRANSITION);
-    if (i === 0) this.director.setObstruction(this.ui.obstruction('play'));
+    this.director.setObstruction(this.ui.obstruction('play'));
     this.ui.titleCard(false);
     this.ui.showTool(def, i);
+    this.ui.markNext(this.nextIdx()); // out of order: the badge that should be next stays marked
     this.ui.hidePrompt();
     this.audio.whoosh(0.12);
     this.setMode('transition');
+    this.refreshKit();
   }
   ready() {
     const def = this.tool.def;
@@ -206,11 +421,117 @@ export class Game {
     if (src === 'key') { const i = tool.nextIndex(); if (i >= 0) this.startHold(i); return; }
     const q = this.pointer();
     const i = tool.hitTest(q.x, q.y, q.sx, q.sy, FINGER / this.director.out.s);
-    if (i >= 0) this.startHold(i); else this.miss(q);
+    if (i >= 0) this.startHold(i); else this.wrongSpot(q, tool);
+  }
+  // a press that missed every target: on the face it hurts there (the eyes most), unless it
+  // was only just off a target; off the face it is only a ripple
+  wrongSpot(q, tool) {
+    const minR = FINGER / this.director.out.s;
+    const near = tool.targets().some((t, i) => !tool.done[i] && Math.hypot(q.x - t.x, q.y - t.y) <= Math.max(tool.hitR(t), minR) + 18);
+    if (near || !(onFace(q.x, q.y, 4) || eyeSide(this.s, q.x, q.y) >= 0)) { this.miss(q); return; }
+    tool.nudge = 1;
+    this.hurtAt(q.x, q.y, HURT_KIND[tool.def.id] || 'bruise');
+  }
+
+  // ---------- hurts and feelings (mood.js) ----------
+  clearHurts() {
+    this.hurtCost = 0; this.hurtList = []; this.eyeHits = 0;
+    this.eyeCool = [0, 0]; this.sayCool = 0; this.stingCool = 0;
+    this.feel = null; this.temper = null; this.fitT = 0; this.fits = 0;
+  }
+  // aura lost to piercings and hurts
+  minus() { return pierceCost(this.s) + this.hurtCost; }
+  // a tool where there is nothing to treat hurts (head-space x, y): it leaves a mark (kind:
+  // burn, bruise, rash) and costs aura; in an eye it squeezes shut, waters, stays red, and
+  // costs much more. `free`: the treatment scores the mark itself (the laser's burns).
+  hurtAt(x, y, kind, free = false) {
+    const s = this.s, who = s.who, side = eyeSide(s, x, y), at = headToStage(s, x, y), t = this.g.time;
+    if (side >= 0) {
+      if (t < this.eyeCool[side]) return false; // one sweep across an eye counts once
+      this.eyeCool[side] = t + 1.2;
+      this.eyeHits++;
+      s.eyeRed[side] = Math.min(1, s.eyeRed[side] + 0.7);
+      s.eyeShut[side] = 2.2; s.tears[side] = 1;
+      s.pain += 2.5;
+      s.mood = Math.max(-1, s.mood - 0.5);
+      react(s, 'squeeze', 1.2, 'wince');
+      s.tiltV += (side ? 1 : -1) * 3.2; s.sqV += 1.4;
+      this.fx.drops(at.x, at.y, 7, '#9fe2ff');
+      this.fx.ring(at.x, at.y, 6, 54, 0.4, '#ff4d6d', 6);
+      this.director.shake(0.55);
+      this.audio.nick(); this.audio.boing(0.5);
+    } else {
+      if (!free) { s.hurts.push({ x, y, kind, t: 0 }); if (s.hurts.length > 16) s.hurts.shift(); }
+      s.pain += 1;
+      s.mood = Math.max(-1, s.mood - 0.25);
+      react(s, 'squeeze', 0.7, 'wince');
+      s.tiltV += (x < 0 ? -1 : 1) * 1.6;
+      this.fx.ring(at.x, at.y, 5, 34, 0.35, '#ff7d9a', 5);
+      if (kind === 'burn') this.fx.puff(at.x, at.y, 3, '190,180,200');
+      this.director.shake(0.25);
+      this.audio.nick();
+    }
+    s.sweat = 1; s.flush = 1; this.g.fail = 1;
+    // it stays with them: a temper builds (sad ones just sink, through the mood above)
+    if (['angry', 'grumpy', 'cold'].includes(temperOf(who))) s.anger = Math.min(0.55, s.pain * 0.1);
+    const cost = free ? 0 : side >= 0 ? HURT.eye : HURT.skin;
+    if (cost) {
+      this.hurtCost += cost;
+      this.hurtList.push(side >= 0 ? 'eye' : 'skin');
+      this.fx.text(at.x, at.y - 34, `-${cost}`, '#ff7d9a', 24);
+      this.updateAura();
+    }
+    // and they say so, in their own words
+    if (t >= this.sayCool) {
+      this.sayCool = t + 0.9;
+      const h = headToStage(s, (side >= 0 ? side * 2 - 1 : x < 0 ? -1 : 1) * 60, -190);
+      this.fx.text(h.x, h.y, lineFor(who, side >= 0 ? 'eye' : 'skin'), '#ffffff', 26, 1.3);
+    }
+    return true;
+  }
+  // soap in an eye while washing: it stings and waters for a moment, no harm done
+  sting(side) {
+    const s = this.s, t = this.g.time;
+    if (t < this.stingCool) return;
+    this.stingCool = t + 3;
+    s.eyeShut[side] = Math.max(s.eyeShut[side], 0.8);
+    s.tears[side] = Math.max(s.tears[side], 0.5);
+  }
+  // the face for how they feel about the job; `final`: the one held on the results screen
+  setFace(final) {
+    const s = this.s;
+    let [expr, mouth, mood, anger, cry, bored] = faceFor(this.feel, this.temper);
+    if (!final && (this.feel === 'thrilled' || this.feel === 'pleased')) { expr = 'happy'; mouth = 'grin'; } // the reveal: delighted
+    if (final && this.feel === 'thrilled' && this.rankName === 'LEGENDARY') { expr = 'wink'; mouth = 'smirk'; }
+    s.exprBase = expr; s.mouthBase = mouth; s.mood = mood; s.anger = anger; s.cry = cry; s.bored = bored;
+    react(s, expr, 0.01, mouth);
+  }
+  // a bad job keeps showing on the face and in fits, by temper: steam and head shakes,
+  // sobs, a cold look away with a sigh, a grumbling head shake
+  fit(dt) {
+    if (!BAD.has(this.feel)) return;
+    this.fitT -= dt;
+    if (this.fitT > 0) return;
+    const s = this.s, T = this.temper, hard = this.feel === 'furious', k = ++this.fits;
+    if (T === 'angry' || (hard && (T === 'grumpy' || T === 'cold'))) {
+      this.fitT = hard ? 0.26 : 0.42;
+      for (const side of [-1, 1]) { const e = headToStage(s, side * 166, 12); this.fx.puff(e.x, e.y, 1, '255,255,255'); }
+      if (k % 6 === 1) { s.tiltV += (k % 12 === 1 ? 1 : -1) * (hard ? 3 : 2); s.sqV -= 0.9; if (hard) this.director.shake(0.2); }
+    } else if (T === 'sad' || T === 'drama') {
+      this.fitT = 0.5;
+      s.sqV += hard || T === 'drama' ? 1.4 : 0.8; // sobbing
+    } else if (T === 'grumpy') {
+      this.fitT = 0.3;
+      if (k % 8 < 4) s.tiltV += (k % 2 ? 1 : -1) * 1.6; // shakes the head
+    } else { // cold: looks away, sighs
+      this.fitT = 1.6;
+      s.lookAt = { x: (k % 2 ? 1 : -1) * 120, y: -130 };
+      const m = headToStage(s, 30, 132); this.fx.puff(m.x, m.y, 1, '235,235,245');
+    }
   }
   // a press that missed every target: a ripple where it landed, and the targets flash
   miss(q) {
-    this.tool.nudge = 1;
+    if (this.tool) this.tool.nudge = 1;
     this.fx.ring(q.sx, q.sy, 8, 46, 0.35, '#ff9fb8', 5);
     this.audio.tink(0.5);
   }
@@ -219,6 +540,7 @@ export class Game {
     tool.cur = i;
     if (!def.multiHold) { this.p = 0; tool.p = 0; }
     this.sweet = tool.sweetFor(i);
+    this.touched = true;
     this.setMode('holding');
     this.seenHint.add(def.id);
     this.ghost = false;
@@ -228,6 +550,7 @@ export class Game {
   }
   startBrush(src) {
     this.brushKey = src === 'key';
+    this.touched = true;
     this.setMode('brushing');
     this.seenHint.add(this.tool.def.id);
     this.ghost = false;
@@ -263,6 +586,14 @@ export class Game {
     tool.outro = true;
     this.scores[this.idx] = result.score;
     this.verdicts[this.idx] = result.verdict;
+    this.used.add(this.idx);
+    if (!this.inOrder) {
+      // done before its turn: the aura pays for it
+      this.misses.add(this.idx);
+      this.ui.stepMiss(this.idx);
+      this.after(0.55, () => this.ui.toast(`WRONG ORDER  -${ORDER_PENALTY}`));
+    }
+    this.refreshKit();
     this.feedback(result);
     this.ui.holding(false);
     this.ui.hidePrompt();
@@ -279,8 +610,9 @@ export class Game {
   scored() { return this.defs.map((d, i) => i).filter((i) => this.defs[i].scored); }
   updateAura() {
     const idx = this.scored();
-    if (idx.length) this.ui.setAura(Math.round(idx.reduce((a, i) => a + (this.scores[i] || 0), 0) / idx.length));
+    if (idx.length) this.ui.setAura(this.auraNow());
   }
+  auraNow() { return auraOf(this.scored().map((i) => this.scores[i] || 0), this.misses.size, this.minus()); }
   feedback(r) {
     const s = this.s;
     const good = r.verdict === 'perfect' || r.verdict === 'good';
@@ -311,27 +643,41 @@ export class Game {
   }
   nextTool() {
     this.tool.exit();
-    if (this.idx + 1 < this.tools.length) this.beginTool(this.idx + 1);
-    else this.startFinale();
+    if (this.used.size >= this.tools.length) this.startFinale();
+    else this.toPick();
   }
   startFinale() {
     const s = this.s;
     this.setMode('finale');
+    this.ui.markNext(-1);
     this.ui.hideTool();
     this.ui.hidePrompt();
     s.lookAt = null;
-    s.exprBase = 'happy'; s.mouthBase = 'grin'; react(s, 'happy', 0.01, 'grin');
+    // how they take the job: the aura and the hurts decide, their temper shows it
+    this.feel = feelingFor(this.auraNow(), LEVELS[this.level].pass, s.pain, this.eyeHits);
+    this.temper = temperOf(s.who);
+    this.fitT = 0.3; this.fits = 0;
+    this.setFace(false);
     this.director.go(this.view(VIEWS.reveal), 1.1);
-    this.audio.fanfare();
-    const hop = (v) => () => {
-      s.hopV = -v; s.sqV += 2.4;
-      const c = headToStage(s, 0, -40);
-      this.fx.burst(c.x, c.y, 14, 420);
-      this.fx.glitter(c.x, c.y + 140, 18, 380);
-      this.audio.boing(1.1);
-    };
-    this.after(0.3, hop(820));
-    this.after(0.95, hop(640));
+    const bad = BAD.has(this.feel);
+    this.after(bad ? 0.35 : 0.55, () => {
+      const h = headToStage(s, 0, -262);
+      this.fx.text(h.x, h.y, lineFor(s.who, this.feel), bad ? '#ff7d9a' : '#ffffff', 30, 1.7);
+    });
+    if (bad) { this.audio.fail(); this.director.shake(this.feel === 'furious' ? 0.5 : 0.25); }
+    else if (this.feel === 'meh') { s.sqV += 1.2; this.audio.boing(0.8); } // a shrug
+    else {
+      this.audio.fanfare();
+      const hop = (v) => () => {
+        s.hopV = -v; s.sqV += 2.4;
+        const c = headToStage(s, 0, -40);
+        this.fx.burst(c.x, c.y, 14, 420);
+        this.fx.glitter(c.x, c.y + 140, 18, 380);
+        this.audio.boing(1.1);
+      };
+      this.after(0.3, hop(820));
+      if (this.feel === 'thrilled') this.after(0.95, hop(640));
+    }
     this.after(FINALE - 0.42, () => this.audio.flash());
     this.after(FINALE, () => this.showResults());
   }
@@ -339,7 +685,8 @@ export class Game {
     const s = this.s, n = this.level;
     const idx = this.scored();
     const scores = idx.map((i) => this.scores[i] || 0);
-    const aura = auraOf(scores);
+    const minus = this.minus();
+    const aura = auraOf(scores, this.misses.size, minus);
     const { rank, next, toNext } = rankFor(aura);
     let worst = -1, ws = 101;
     scores.forEach((v, k) => { if (v < ws) { ws = v; worst = k; } });
@@ -348,39 +695,42 @@ export class Game {
     const newBest = aura > (P.best[n] || 0);
     if (newBest) P.best[n] = aura;
     this.passed = aura >= LEVELS[n].pass;
+    const had = P.unlocked;
     if (this.passed && n + 1 < LEVELS.length) P.unlocked = Math.max(P.unlocked, n + 2);
+    // passing opens the next level; the treatment it brings in, if any
+    const unlock = this.passed && n + 1 < LEVELS.length ? this.levelInfo(n + 1).fresh : [];
     saveProgress(P);
     this.playables.save(P);
     this.playables.sendScore(P.best.reduce((a, b) => a + (b || 0), 0));
     this.flash = 1;
     this.director.go(this.view(VIEWS.results), 1.2);
-    // final expression by rank
-    const face = {
-      LEGENDARY: ['wink', 'smirk', 1], MOGGER: ['happy', 'grin', 1], CHADLITE: ['normal', null, 0.85],
-      NORMIE: ['normal', null, 0.45], NPC: ['normal', 'wince', 0.1],
-    }[rank.name];
-    s.exprBase = face[0]; s.mouthBase = face[1]; s.mood = face[2];
-    react(s, face[0], 0.01, face[1]);
+    // the face they leave with: how they feel about the job (set at the finale)
     this.rankName = rank.name;
+    if (!this.feel) { this.feel = feelingFor(aura, LEVELS[n].pass, s.pain, this.eyeHits); this.temper = temperOf(s.who); }
+    this.setFace(true);
     this.ui.setLevel(n, P.unlocked);
     this.ui.showResults({
       aura, rank: rank.name, next: next && next.name, toNext, near: !!next && toNext < 6, worst,
       bars: idx.map((i, k) => ({ icon: this.defs[i].icon, name: this.defs[i].name, score: scores[k] })),
-      best: P.best[n], newBest, passed: this.passed, last: n + 1 === LEVELS.length,
-      // passing opens the next level; show the treatment it brings in, if any
-      unlock: this.passed && n + 1 < LEVELS.length ? this.levelInfo(n + 1).fresh : [],
+      order: { total: this.defs.length, misses: this.misses.size, penalty: this.misses.size * ORDER_PENALTY },
+      pierce: { count: s.pierced.length, minus: pierceCost(s) },
+      hurt: { list: this.hurtList, minus: this.hurtCost },
+      say: { text: lineFor(s.who, this.feel), feel: this.feel },
+      best: P.best[n], newBest, passed: this.passed, last: n + 1 === LEVELS.length, unlock,
     });
+    // a new tool unlocked for the first time: a pop-up with a button straight into its level
+    if (unlock.length && P.unlocked > had) this.after(1.6, () => { if (this.mode === 'results') this.ui.showUnlock(unlock[0], n + 2); });
     this.director.setObstruction(this.ui.obstruction('results'));
     this.ui.layoutSplit(this.director.obsGoal);
     this.after(0.22, () => {
       this.audio.thud(); this.director.shake(0.35);
       const big = this.passed && n + 1 === LEVELS.length;
-      if (aura >= 70 || big) { this.fx.confetti(window.innerWidth, big || aura >= 95 ? 150 : 80); this.audio.cheer(); }
+      if ((aura >= 70 && !BAD.has(this.feel)) || big) { this.fx.confetti(window.innerWidth, big || aura >= 95 ? 150 : 80); this.audio.cheer(); }
     });
     this.splitV = 0; this.splitUser = false;
     this.setMode('results');
   }
-  retry() { this.startLevel(this.level); }
+  retry() { this.startLevel(this.level); } // the same patient, a fresh start
   // progress saved on the platform (another device) merges with the local copy
   mergeProgress(o) {
     const P = this.progress;
@@ -398,14 +748,18 @@ export class Game {
     if (this.mode === 'results') {
       this.director.setObstruction(this.ui.obstruction('results'), true);
       this.ui.layoutSplit(this.director.obsGoal);
-    } else this.director.setObstruction(this.ui.obstruction(this.mode === 'intro' ? 'intro' : 'play'), true);
+    } else this.director.setObstruction(this.ui.obstruction(this.mode === 'intro' ? 'intro' : this.ui.kitOpen ? 'kit' : 'play'), true);
   }
 
   // ---------- input ----------
   onDown(src) {
     this.audio.init();
     const m = this.mode;
-    if (m === 'intro' || m === 'arrive') { this.beginTool(0); return; }
+    // with the kit open, presses land on the kit; only Space gets here (it closes the kit)
+    if (this.ui.kitOpen) this.closeKit();
+    // waiting for a tool: a press anywhere opens the kit, Space takes the next treatment
+    if (m === 'intro' || m === 'arrive' || m === 'pick') { if (src === 'key') this.chooseNext(); else this.openKit(); return; }
+    if (m === 'style') { this.stylePress(src); return; }
     if (m === 'ready') this.press(src);
   }
   onUp(src) {
@@ -417,6 +771,7 @@ export class Game {
       // a dropped hold (tab hidden, pause) or a quick tap does not count as a release
       if (src === 'cancel' || this.p < TAP_IGNORE) {
         tool.cancel(); tool.cur = -1; tool.p = 0; this.p = 0;
+        this.touched = this.tScores.length > 0; // a false start doesn't commit to this treatment
         if (src !== 'cancel') this.ui.toast('KEEP HOLDING!');
         this.setMode('ready');
         this.ui.holding(false);
@@ -426,6 +781,7 @@ export class Game {
       return;
     }
     if (m === 'brushing') { this.tool.lift(); this.setMode('ready'); this.ui.holding(false); return; }
+    if (m === 'style') { this.style.down = false; this.style.last = null; return; }
     // Space on the results screen: next level if it is unlocked, otherwise try again
     if (m === 'results' && src === 'key' && this.modeT > 1.2) { if (this.passed) this.nextLevel(); else this.retry(); }
   }
@@ -443,10 +799,17 @@ export class Game {
     let prog = g.prog;
     switch (this.mode) {
       case 'intro':
-        if (this.modeT > 2.4) this.beginTool(0);
+        if (this.modeT > 2.4) this.toPick();
         break;
       case 'arrive':
-        if (this.modeT > ARRIVE) this.beginTool(0);
+        if (this.modeT > ARRIVE) this.toPick();
+        break;
+      case 'pick':
+        prog = 0;
+        break;
+      case 'style':
+        prog = 0;
+        if (this.style.down) this.rubDye();
         break;
       case 'transition':
         tool.idle(dt, this.p);
@@ -485,7 +848,11 @@ export class Game {
       case 'outro':
         if (tool.outroDone() && this.modeT > 0.7) this.nextTool();
         break;
+      case 'finale':
+        this.fit(dt);
+        break;
       case 'results': {
+        this.fit(dt);
         if (!this.splitUser) {
           // demonstrate the slider once: wipe from all-after to the middle
           const k = Math.min(1, Math.max(0, (this.modeT - 1.1) / 0.9));

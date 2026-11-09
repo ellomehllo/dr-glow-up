@@ -29,6 +29,12 @@ const ui = new UI(document.getElementById('ui'), {
   onAgain: () => game && game.retry(),
   onNext: () => game && game.nextLevel(),
   onSplit: (v) => game && game.setSplit(v),
+  onKit: () => game && game.openKit(),
+  onKitPick: (id) => !!game && game.choose(id),
+  onKitClose: () => game && game.closeKit(),
+  onDye: (id) => game && game.pickDye(id),
+  onStyleDone: () => game && game.endStyle(),
+  onUnlockPlay: () => game && game.nextLevel(),
 });
 input.on('first', () => audio.init());
 // every release, anywhere on the page, nudges the sound awake (needed on iPhone)
@@ -120,12 +126,17 @@ if (qs.has('debug')) {
     hold(sec) { this.key('keydown'); this.step(Math.round(sec * 60)); this.key('keyup'); },
     // jump to a level (0-based) with a fresh patient (optionally a given character kind)
     level(n, kind) { game.startLevel(n, kind); return game.defs.map((d) => d.id); },
-    // scripted run of the current level from its first treatment, with Space: every
-    // target is released at its own sweet centre plus off[id] (progress units, or a
-    // function of the target index); brushes run on autopilot
-    play(off = {}, stopAt = null) {
+    // scripted run of the current level: picks each treatment from the kit in the
+    // level's order (or `order`, a list of ids), then plays it with Space: every target
+    // is released at its own sweet centre plus off[id] (progress units, or a function of
+    // the target index); brushes run on autopilot. Stops once `stopAt` is ready.
+    play(off = {}, stopAt = null, order = null) {
       const waitFor = (ms) => { let i = 0; while (!ms.includes(game.mode) && i < 900) { this.step(1); i++; } };
-      for (const tool of game.tools) {
+      const ids = order || game.defs.map((d) => d.id);
+      for (const id of ids) {
+        const tool = game.tools[game.defs.findIndex((d) => d.id === id)];
+        waitFor(['intro', 'arrive', 'pick']);
+        game.choose(id);
         waitFor(['ready']);
         const def = tool.def;
         if (stopAt === def.id) return game.mode;
@@ -144,11 +155,13 @@ if (qs.has('debug')) {
             this.step(2);
           }
         }
-        waitFor(['ready', 'finale', 'results']);
+        waitFor(['pick', 'finale', 'results']);
       }
       waitFor(['results']);
       return game.mode;
     },
+    // the kit as the player sees it: [id, state] pairs
+    kit: () => game.kit().map((t) => [t.id, t.state]),
     // a real finger: press at head-space (hx, hy), optionally drag through more
     // head-space points, over `sec` seconds of game time, then lift
     toScreen(hx, hy) { const st = headToStage(game.s, hx, hy); return game.director.toScreen(st.x, st.y); },

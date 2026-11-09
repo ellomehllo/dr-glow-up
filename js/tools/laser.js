@@ -1,9 +1,10 @@
 // XII. Laser: drag the laser pen over the face and the beam zaps the sun spots away.
 // Keep it moving: a beam that rests in one place leaves a pink mark, and every mark
-// costs points. With Space held the laser hops from spot to spot on its own.
+// costs points. Never across the eyes: that hurts (mood.js). With Space held the laser
+// hops from spot to spot on its own.
 import { Tool, drawHand } from './base.js';
 import { rand, TAU } from '../draw.js';
-import { INK, applyHead, onFace } from '../patient.js';
+import { INK, applyHead, onFace, eyeSide } from '../patient.js';
 
 const REACH = 24; // a spot this close to the beam (plus its size) is being zapped
 const ZAP = 0.14; // seconds under the beam to zap a spot
@@ -38,12 +39,7 @@ export class LaserTool extends Tool {
     const { g } = this, s = g.s;
     if (s.burns.length >= 8 || !onFace(x, y, -6)) return;
     s.burns.push({ x, y, t: 0 });
-    const w = g.head(x, y);
-    g.fx.puff(w.x, w.y, 2, '255,150,170');
-    g.fx.text(w.x + 60, w.y - 30, 'OUCH!', '#ff7d9a', 22);
-    g.audio.nick();
-    g.react('squeeze', 0.6, 'wince');
-    g.fail = Math.max(g.fail, 0.7);
+    g.hurt(x, y, 'burn', true); // it hurts (the laser's own score pays for the mark)
   }
   brush(dt, pos) {
     const { g } = this, s = g.s;
@@ -68,8 +64,9 @@ export class LaserTool extends Tool {
         if (p.z >= 1) this.pop(p);
       }
     }
-    // resting in one place heats the skin up
-    if (pos && onFace(to.x, to.y)) {
+    // the beam in an eye hurts at once; resting anywhere else heats the skin up
+    if (pos && eyeSide(s, to.x, to.y) >= 0) { this.heat = 0; g.hurt(to.x, to.y, 'burn'); }
+    else if (pos && onFace(to.x, to.y)) {
       if (speed < SLOW) this.heat += dt; else this.heat = Math.max(0, this.heat - dt * 3);
       if (this.heat >= HOT) { this.heat = 0; this.burn(to.x, to.y); }
     } else this.heat = 0;
