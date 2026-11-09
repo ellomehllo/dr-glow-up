@@ -6,6 +6,7 @@ import { Tool, drawTapHint } from './base.js';
 import { TAU, rand, clamp01 } from '../draw.js';
 import { INK, EYE, applyHead } from '../patient.js';
 import { makeGuide, drawGuide } from '../guide.js';
+import { onSkin, dab } from './free.js';
 
 // one target under each eye, and a gauge arc that hangs below it
 const SPOTS = [-1, 1].map((side) => ({ x: side * EYE.x, y: EYE.y + 32, r: 46 }));
@@ -22,6 +23,7 @@ export class CirclesTool extends Tool {
   targets() { return SPOTS; }
   hitR(t) { return t.r + 6; }
   fixed(i) { return this.g.s.circ[i] < 0.05; }
+  freeSpot(q) { if (!this.free || !onSkin(this.g, q)) return false; dab(this.g, q, '#c4ef94'); return true; } // a cool slice
   enter() { super.enter(); this.reset(); this.g.s.lookAt = { x: 0, y: -40 }; }
   begin(i) { this.g.react('happy', 99, null); this.press = 0; this.g.s.lookAt = null; void i; }
   hold(dt, p) {
@@ -84,11 +86,12 @@ export class CirclesTool extends Tool {
     SPOTS.forEach((t, i) => {
       if (this.done[i]) return;
       if (i === held) {
-        drawGuide(ctx, GAUGES[i], this.guideOpts(time));
+        if (this.guides) drawGuide(ctx, GAUGES[i], this.guideOpts(time));
         ctx.save(); ctx.translate(t.x, t.y - 6); ctx.scale(1 + 0.08 * (1 - this.press), 1 - 0.1 * this.press); drawCucumber(ctx, 1); ctx.restore();
         return;
       }
-      // waiting: the gauge under the eye as a breathing dotted arc
+      // waiting: the gauge under the eye as a breathing dotted arc (first use only)
+      if (!this.guides) return;
       const P = GAUGES[i][0].poly, k = 1 + 0.04 * Math.sin(time * 4 + i) + this.nudge * 0.06 * Math.sin(time * 20);
       ctx.save(); ctx.translate(t.x, 26); ctx.scale(k, k); ctx.translate(-t.x, -26);
       ctx.lineCap = 'round'; ctx.setLineDash([0.1, 13]); ctx.lineDashOffset = -time * 16;
@@ -103,7 +106,7 @@ export class CirclesTool extends Tool {
         const t = SPOTS[i];
         ctx.save(); ctx.translate(t.x + (t.x < 0 ? -64 : 64), t.y + 34 + Math.sin(time * 3) * 6); ctx.rotate(Math.sin(time * 2) * 0.2);
         drawCucumber(ctx, 0.8); ctx.restore();
-        if (g.hint || this.nudge > 0.05) drawTapHint(ctx, t.x, t.y, time, true, g.hint ? 1 : this.nudge, 0.9);
+        if (this.guides && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, t.x, t.y, time, true, g.hint ? 1 : this.nudge, 0.9);
       }
     }
     ctx.restore();

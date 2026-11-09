@@ -7,6 +7,7 @@ import { Tool, drawTapHint } from './base.js';
 import { TAU, rand, ell } from '../draw.js';
 import { INK, COL, applyHead } from '../patient.js';
 import { drawBit, drawWorm } from '../extras.js';
+import { onSkin, pinch, pluck } from './free.js';
 
 const SILVER = '#e3e8f4';
 
@@ -27,6 +28,13 @@ export class TweezeTool extends Tool {
   }
   hitR(t) { return t.r + 8; }
   fixed(i) { return !!this.targets()[i].ref.gone; }
+  // off every target the tweezers still pluck: a hair, a brow hair; on a free use a
+  // pinch of skin too
+  freeSpot(q) {
+    if (pluck(this.g, q)) return true;
+    if (!this.free || !onSkin(this.g, q)) return false;
+    pinch(this.g, q); return true;
+  }
   enter() { super.enter(); this.reset(); this.targets(); this.g.s.lookAt = { x: 0, y: -120 }; }
   // where the tweezers grip target t, pulled by k
   grip(t, k) {
@@ -107,8 +115,8 @@ export class TweezeTool extends Tool {
     applyHead(ctx, s);
     ctx.globalAlpha = this.alpha;
     ctx.lineCap = 'round';
-    // a dashed ring round each thing still to pull
-    if (!this.outro) {
+    // first use: a dashed ring round each thing still to pull
+    if (!this.outro && this.guides) {
       for (let i = 0; i < T.length; i++) {
         if (this.done[i] || i === this.cur) continue;
         const t = T[i], R = t.r + 6 + Math.sin(time * 4 + i) * 2 + this.nudge * 10 * Math.sin(time * 20);
@@ -137,7 +145,7 @@ export class TweezeTool extends Tool {
         if (i >= 0) { at = { x: T[i].x + 14, y: T[i].y - 18 + Math.sin(time * 4) * 5 }; }
       }
       if (at) drawTweezers(ctx, at.x, at.y, pinch, this.cur >= 0 ? Math.sin(time * 30) * 0.04 * this.k : 0);
-      if (this.cur < 0 && (g.hint || this.nudge > 0.05)) {
+      if (this.cur < 0 && this.guides && (g.hint || this.nudge > 0.05)) {
         const i = this.nextIndex();
         if (i >= 0) drawTapHint(ctx, T[i].x, T[i].y, time, true, this.alpha * (g.hint ? 1 : this.nudge), 0.9);
       }

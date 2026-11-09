@@ -4,7 +4,8 @@
 // hops from spot to spot on its own.
 import { Tool, drawHand } from './base.js';
 import { rand, TAU } from '../draw.js';
-import { INK, applyHead, onFace, eyeSide } from '../patient.js';
+import { INK, applyHead, onFace, eyeSide, addBald } from '../patient.js';
+import { onHair } from './free.js';
 
 const REACH = 24; // a spot this close to the beam (plus its size) is being zapped
 const ZAP = 0.14; // seconds under the beam to zap a spot
@@ -18,7 +19,7 @@ export class LaserTool extends Tool {
   reset() {
     super.reset();
     this.tip = null; this.firing = false; this.heat = 0; this.zapped = 0; this.route = null; this.wait = 0;
-    this.last = null; this.acc = 0;
+    this.last = null; this.acc = 0; this.env = null;
   }
   enter() {
     super.enter(); this.reset();
@@ -37,7 +38,7 @@ export class LaserTool extends Tool {
   begin() { this.last = null; }
   burn(x, y) {
     const { g } = this, s = g.s;
-    if (s.burns.length >= 8 || !onFace(x, y, -6)) return;
+    if (s.burns.length >= 24 || !onFace(x, y, -6)) return;
     s.burns.push({ x, y, t: 0 });
     g.hurt(x, y, 'burn', true); // it hurts (the laser's own score pays for the mark)
   }
@@ -66,10 +67,28 @@ export class LaserTool extends Tool {
     }
     // the beam in an eye hurts at once; resting anywhere else heats the skin up
     if (pos && eyeSide(s, to.x, to.y) >= 0) { this.heat = 0; g.hurt(to.x, to.y, 'burn'); }
-    else if (pos && onFace(to.x, to.y)) {
-      if (speed < SLOW) this.heat += dt; else this.heat = Math.max(0, this.heat - dt * 3);
+    else if (pos && onHair(to.x, to.y)) {
+      // resting on the hair burns it away: a scorched bald patch and a wisp of smoke
+      if (speed < SLOW) this.heat += dt * 2.5; else this.heat = Math.max(0, this.heat - dt * 3);
+      if (this.heat >= HOT) {
+        this.heat = 0;
+        addBald(s, to.x, to.y, 22, 'burn');
+        const w = g.head(to.x, to.y);
+        g.fx.puff(w.x, w.y, 3, '120,110,120');
+        g.fx.text(w.x, w.y - 34, 'SIZZLE!', '#ffb36b', 22, 0.8);
+        g.react('wide', 0.7, 'o');
+        g.audio.nick();
+      }
+    } else if (pos && onFace(to.x, to.y)) {
+      // a real laser marks skin it rests on (a free use, with nothing to aim at, faster)
+      if (speed < SLOW) this.heat += dt * (this.free ? 2 : 1); else this.heat = Math.max(0, this.heat - dt * 3);
       if (this.heat >= HOT) { this.heat = 0; this.burn(to.x, to.y); }
-    } else this.heat = 0;
+    } else {
+      // off the patient: the room (the glass, the bubbles, the waiting room; game.js)
+      this.heat = 0;
+      this.env = pos ? g.env(pos, dt) : null;
+    }
+    if (!pos || onFace(to.x, to.y) || onHair(to.x, to.y)) this.env = null;
     s.lookAt = { x: to.x * 0.4, y: to.y };
     g.audio.level('laser', 0.16);
     this.acc += dt;
@@ -86,7 +105,7 @@ export class LaserTool extends Tool {
     g.fx.burst(w.x, w.y, 5, 170, { size: rand(8, 12) });
     g.audio.zap(0.9 + Math.random() * 0.3);
   }
-  lift() { this.firing = false; this.last = null; this.heat = 0; this.idle(); }
+  lift() { this.firing = false; this.last = null; this.heat = 0; this.env = null; this.idle(); }
   idle() { this.g.audio.level('laser', 0); }
   coverage() { const n = this.g.s.spots.length; return n ? this.zapped / n : 1; }
   complete() { return this.zapped >= this.g.s.spots.length || this.done[0]; }
@@ -122,8 +141,8 @@ export class LaserTool extends Tool {
     ctx.save();
     applyHead(ctx, s);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    // every spot still there gets a dotted target ring
-    if (!this.outro) {
+    // first use: every spot still there gets a dotted target ring
+    if (!this.outro && this.guides) {
       ctx.globalAlpha = a * 0.85;
       ctx.setLineDash([0.1, 9]); ctx.lineDashOffset = -time * 14;
       ctx.lineWidth = 5; ctx.strokeStyle = '#ffffff';
@@ -134,7 +153,7 @@ export class LaserTool extends Tool {
       ctx.setLineDash([]);
     }
     // first time: a hand sweeps across the nearest spots
-    if (g.hint && !this.tip && this.route && this.route.length) {
+    if (this.guides && g.hint && !this.tip && this.route && this.route.length) {
       const p0 = this.route[0], p1 = this.route[Math.min(1, this.route.length - 1)], k = 0.5 - 0.5 * Math.cos(time * 2.4);
       ctx.globalAlpha = a;
       drawHand(ctx, p0.x + (p1.x - p0.x) * k, p0.y + (p1.y - p0.y) * k, 0.9);
@@ -153,6 +172,19 @@ export class LaserTool extends Tool {
       const r = 10 + Math.sin(time * 40) * 1.5 + hot * 8;
       ctx.beginPath(); ctx.arc(at.x, at.y, r * 1.8, 0, TAU); ctx.fillStyle = `rgba(255,${Math.round(120 - 60 * hot)},170,0.35)`; ctx.fill();
       ctx.beginPath(); ctx.arc(at.x, at.y, r * 0.6, 0, TAU); ctx.fillStyle = '#ffffff'; ctx.fill();
+      if (this.env === 'glass') {
+        // off the glass: the beam glances back out, mirrored, with a star of light
+        const dx = at.x - pen.x, dy = at.y - pen.y, L = Math.hypot(dx, dy) || 1, R = 700, c = Math.cos(0.6), n = Math.sin(0.6);
+        const ux = -dx / L, uy = -dy / L, out = { x: at.x + (ux * c - uy * n) * R, y: at.y + (ux * n + uy * c) * R };
+        const gr = ctx.createLinearGradient(at.x, at.y, out.x, out.y);
+        gr.addColorStop(0, 'rgba(255,79,139,0.95)'); gr.addColorStop(1, 'rgba(255,79,139,0)');
+        ctx.beginPath(); ctx.moveTo(at.x, at.y); ctx.lineTo(out.x, out.y);
+        ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(255,90,150,0.18)'; ctx.stroke();
+        ctx.lineWidth = 4; ctx.strokeStyle = gr; ctx.stroke();
+        const k = 18 + Math.sin(time * 30) * 4;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(at.x - k, at.y); ctx.lineTo(at.x + k, at.y); ctx.moveTo(at.x, at.y - k); ctx.lineTo(at.x, at.y + k); ctx.stroke();
+      }
     }
     ctx.translate(pen.x, pen.y);
     ctx.rotate(Math.atan2(-PEN.y, -PEN.x) - Math.PI / 2);

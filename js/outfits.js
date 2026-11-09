@@ -301,6 +301,45 @@ export function drawBehind(ctx, s) {
   }
 }
 
+// on the clothes: body point (x, y) (stage units, the patient's own origin) is on the torso
+let hitCtx = null;
+export function onBody(s, x, y) {
+  if (!hitCtx) hitCtx = (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1) : document.createElement('canvas')).getContext('2d');
+  return y > 262 && hitCtx.isPointInPath(geo(s.who.build).torso, x, y);
+}
+// what tools left on the clothes (world.js): wet patches, paint, gel, powder, paste,
+// bleach, a loose thread, holes and scorch marks
+function drawStains(ctx, s) {
+  for (const m of s.stains) {
+    const { x, y, r } = m;
+    ctx.save();
+    ctx.lineCap = 'round';
+    switch (m.kind) {
+      case 'wet': soft(ctx, x, y, r * 1.3, r, '#1a1030', 0.28); break;
+      case 'green': soft(ctx, x, y, r * 1.2, r, '#3f9a4a', 0.35); break;
+      case 'bleach': soft(ctx, x, y, r * 1.4, r * 1.1, '#ffffff', 0.55); break;
+      case 'powder': for (let k = 0; k < 6; k++) { ctx.fillStyle = 'rgba(255,240,248,0.7)'; ell(ctx, x + Math.cos(m.rot + k) * r * 0.4, y + Math.sin(m.rot + k) * r * 0.3, r * 0.45, r * 0.35); ctx.fill(); } break;
+      case 'paint': case 'gel': case 'paste':
+        ctx.fillStyle = m.kind === 'paint' ? m.col : m.kind === 'gel' ? 'rgba(63,224,181,0.7)' : 'rgba(255,255,255,0.92)';
+        ell(ctx, x, y, r, r * 0.7, m.rot); ctx.fill();
+        if (m.kind !== 'paste') { ctx.beginPath(); ctx.roundRect(x - 4, y, 8, r * 1.2, 4); ctx.fill(); }
+        break;
+      case 'thread':
+        ctx.strokeStyle = INK; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.bezierCurveTo(x + 10, y + 10, x - 8, y + 20, x + 6, y + 34); ctx.stroke();
+        break;
+      case 'hole': case 'burn':
+        ell(ctx, x, y, r * 0.8, r * 0.65, m.rot); ctx.fillStyle = m.kind === 'burn' ? '#3a2228' : s.who.skin.base; ctx.fill();
+        ctx.lineWidth = 4; ctx.strokeStyle = m.kind === 'burn' ? 'rgba(40,24,20,0.75)' : INK; ctx.stroke();
+        break;
+      case 'scorch': // an iron's print
+        ctx.translate(x, y); ctx.rotate(m.rot); ctx.fillStyle = 'rgba(90,50,30,0.5)';
+        ctx.beginPath(); ctx.moveTo(-r, r * 0.5); ctx.lineTo(r, r * 0.5); ctx.quadraticCurveTo(r * 0.6, -r * 0.6, -r * 0.1, -r * 0.7); ctx.lineTo(-r, -r * 0.7); ctx.closePath(); ctx.fill();
+        break;
+    }
+    ctx.restore();
+  }
+}
 export function drawBody(ctx, s) {
   const w = s.who, sk = w.skin, o = w.outfit, G = geo(w.build), t = TORSO[o.type] ? o.type : 'gown';
   const d = o.d || mix(o.c, '#1a1020', 0.28);
@@ -312,6 +351,7 @@ export function drawBody(ctx, s) {
   lg.addColorStop(0, 'rgba(255,255,255,0.14)'); lg.addColorStop(0.42, 'rgba(255,255,255,0)'); lg.addColorStop(0.68, 'rgba(40,20,60,0.05)'); lg.addColorStop(1, 'rgba(40,20,60,0.22)');
   ctx.fillStyle = lg; ctx.fillRect(-G.W - 30, 200, G.W * 2 + 60, 1300);
   soft(ctx, 0, 266, G.n + 50, 30, '#2a1626', 0.2);
+  drawStains(ctx, s);
   if (t !== 'tank' && t !== 'glam') { // soft folds pulling from under the arms
     ctx.strokeStyle = FOLD; ctx.lineWidth = 3;
     ctx.beginPath();

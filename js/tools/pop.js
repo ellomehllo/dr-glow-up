@@ -5,6 +5,7 @@
 import { Tool, drawTapHint } from './base.js';
 import { TAU, rand } from '../draw.js';
 import { INK, COL, applyHead } from '../patient.js';
+import { onSkin, pinch } from './free.js';
 
 export class PopTool extends Tool {
   constructor(g, def) { super(g, def); this.outroLen = 0.9; this.reset(); }
@@ -12,6 +13,8 @@ export class PopTool extends Tool {
   targets() { return this.g.s.pimples; }
   hitR(t) { return t.r * 1.8 + 16; }
   fixed(i) { return this.g.s.pimples[i].popped; }
+  // a squeeze where there's no pimple only pinks the skin (on a free use)
+  freeSpot(q) { if (!this.free || !onSkin(this.g, q)) return false; pinch(this.g, q); return true; }
   enter() { super.enter(); this.k = 0; this.g.s.lookAt = { x: 0, y: 40 }; }
   begin(i) {
     const pm = this.g.s.pimples[i];
@@ -83,7 +86,7 @@ export class PopTool extends Tool {
     ctx.globalAlpha = this.alpha;
     ctx.lineCap = 'round';
     for (let i = 0; i < P.length; i++) {
-      if (this.done[i]) continue;
+      if (this.done[i] || !this.guides) continue; // the rings are a first-use guide
       const pm = P[i], held = i === this.cur;
       const base = pm.r * 1.25;
       let R, zone = false, over = false;
@@ -104,7 +107,7 @@ export class PopTool extends Tool {
       ctx.setLineDash(zone ? [] : [7, 7]); ctx.lineDashOffset = -time * 30; ctx.stroke(); ctx.setLineDash([]);
     }
     // first time (or after a miss): a hand points at the next pimple
-    if (this.cur < 0 && (g.hint || this.nudge > 0.05)) {
+    if (this.cur < 0 && this.guides && (g.hint || this.nudge > 0.05)) {
       const i = this.nextIndex();
       if (i >= 0) drawTapHint(ctx, P[i].x, P[i].y, time, true, this.alpha * (g.hint ? 1 : this.nudge), 0.9);
     }

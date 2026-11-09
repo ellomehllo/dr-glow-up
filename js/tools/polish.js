@@ -56,7 +56,7 @@ export class PolishTool extends Tool {
     const { g } = this, s = g.s;
     ctx.save();
     applyHead(ctx, s);
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, 10, 30, time, true, this.alpha * (g.hint ? 1 : this.nudge), 1);
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, 10, 30, time, true, this.alpha * (g.hint ? 1 : this.nudge), 1);
     ctx.globalAlpha = this.alpha * Math.max(0, 1 - this.fly * 1.8);
     const bob = this.rubbing ? 0 : Math.sin(time * 4) * 6;
     ctx.translate(this.pos.x - this.fly * 380, this.pos.y + bob - this.fly * 300);

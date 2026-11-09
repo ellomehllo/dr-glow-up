@@ -233,6 +233,85 @@ export const TOOL_ART = {
     </g>
     ${sparkle(43, 30, 4)}`, 'gems'),
 
+  // glitter: a little pot of sparkles with a shaker lid, glitter falling out
+  glitter: art(`
+    <rect x="10" y="20" width="22" height="22" rx="5" fill="#d8c4ff"/>
+    <g fill="#ffc93c" stroke="none"><circle cx="16" cy="30" r="1.8"/><circle cx="24" cy="35" r="1.6"/><circle cx="20" cy="26" r="1.3"/><circle cx="27" cy="28" r="1.8"/><circle cx="15" cy="37" r="1.3"/></g>
+    <rect x="8" y="13" width="26" height="8" rx="3" fill="#ff6fb5"/>
+    <g fill="${INK}" stroke="none"><circle cx="15" cy="17" r="1"/><circle cx="21" cy="17" r="1"/><circle cx="27" cy="17" r="1"/></g>
+    ${sparkle(40, 10, 5)}${sparkle(41, 27, 3, '#6fd3ff', 1.5)}${sparkle(30, 5, 2.6, '#fff', 1.4)}`, 'glitter'),
+
+  // eyeshadow: a palette of three pans and an applicator
+  shadow: art(`
+    <rect x="4" y="16" width="32" height="22" rx="5" fill="#fff"/>
+    <circle cx="12" cy="27" r="5" fill="#ff7fb0" stroke-width="2"/>
+    <circle cx="20" cy="27" r="5" fill="#9a5ce6" stroke-width="2"/>
+    <circle cx="28" cy="27" r="5" fill="#4f8fff" stroke-width="2"/>
+    <g transform="rotate(40 38 24)">
+      <rect x="35.5" y="16" width="4" height="26" rx="2" fill="#ffc93c"/>
+      <ellipse cx="37.5" cy="13" rx="3.6" ry="5.5" fill="#d6b8ff"/>
+    </g>
+    ${sparkle(9, 8, 4)}`, 'shadow'),
+
+  // freckles: a cheek with a speckle of freckles and a fine brush
+  freckles: art(`
+    <circle cx="20" cy="27" r="15" fill="#ffd8be"/>
+    <g fill="#9a5a36" stroke="none"><circle cx="14" cy="24" r="1.8"/><circle cx="19" cy="21" r="1.5"/><circle cx="24" cy="25" r="1.9"/><circle cx="17" cy="30" r="1.6"/><circle cx="26" cy="31" r="1.4"/><circle cx="21" cy="34" r="1.5"/></g>
+    <g transform="rotate(35 38 18)">
+      <rect x="36" y="12" width="4" height="26" rx="2" fill="#6fd3ff"/>
+      <path d="M36 12q2-8 4 0z" fill="#9a5a36" stroke-width="2"/>
+    </g>
+    ${sparkle(40, 40, 3.5, '#fff', 1.5)}`, 'freckles'),
+
+  // mascara: a wand and its tube, lashes curling up
+  lashes: art(`
+    <g transform="rotate(-30 22 26)">
+      <rect x="18" y="22" width="9" height="22" rx="3" fill="#b48cff"/>
+      <rect x="19.5" y="18" width="6" height="5" rx="1.5" fill="#e3e8f4"/>
+      <path d="M22.5 18V5" stroke-width="2.4"/>
+      <path d="M19 6h7M19 9h7M19 12h7" stroke-width="2.2"/>
+    </g>
+    <path d="M28 40q8-6 16 0" stroke-width="2.6"/>
+    <path d="M30 38.5l-2-4M34 37l-1-4.5M38 37l1-4.5M42 38.5l2-4" stroke-width="2"/>
+    ${sparkle(40, 10, 4.5)}`, 'lashes'),
+
+  // brow tint: a brow and an angled brush
+  brows: art(`
+    <path d="M5 28Q16 15 34 20Q20 19 7 31z" fill="#6b4128" stroke-width="2.2"/>
+    <g transform="rotate(-40 34 32)">
+      <rect x="32" y="26" width="4" height="20" rx="2" fill="#ff6fb5"/>
+      <path d="M31 26l5-7v7z" fill="#6b4128" stroke-width="2"/>
+    </g>
+    ${sparkle(41, 9, 4.5)}${sparkle(10, 42, 3, '#fff', 1.5)}`, 'brows'),
+
+  // hair clips: a bow and a star clip
+  clips: art(`
+    <path d="M18 18C14 10 4 9 5 18C4 27 14 26 18 18C22 10 32 9 31 18C32 27 22 26 18 18Z" fill="#ff6fb5"/>
+    <ellipse cx="18" cy="18" rx="3" ry="3.6" fill="#ffc2df" stroke-width="2"/>
+    <rect x="18" y="34" width="26" height="4.5" rx="2.2" fill="#e3e8f4" stroke-width="2"/>
+    <path d="M34 26.5l1.9 3.8 4.2.6-3 3 .7 4.1-3.8-2-3.8 2 .7-4.1-3-3 4.2-.6z" fill="#ffd25e" stroke-width="2"/>
+    ${sparkle(40, 10, 4.5)}`, 'clips'),
+
+  // highlighter: a round pearly pan with a shine sweep and a fan brush
+  highlight: art(`
+    <circle cx="18" cy="28" r="14" fill="#fff4e6"/>
+    <path d="M9 31q9-10 18-6" stroke="#ffd98a" stroke-width="3.4"/>
+    <path d="M11 24q6-5 12-4" stroke="#fff" stroke-width="2.4"/>
+    <g transform="rotate(40 36 18)">
+      <rect x="34" y="18" width="4" height="22" rx="2" fill="#e3cfff"/>
+      <path d="M30 18q6-14 12 0z" fill="#fff0c4" stroke-width="2.2"/>
+    </g>
+    ${sparkle(8, 9, 4.5)}${sparkle(42, 42, 3, '#ffc93c', 1.5)}`, 'highlight'),
+
+  // sunglasses: heart-shaped shades with a shine
+  shades: art(`
+    <path d="M14 36C2 28 3 18 9 17C12 16.5 14 18 14 20C14 18 16 16.5 19 17C25 18 26 28 14 36Z" fill="#2a1e33"/>
+    <path d="M34 36C22 28 23 18 29 17C32 16.5 34 18 34 20C34 18 36 16.5 39 17C45 18 46 28 34 36Z" fill="#2a1e33"/>
+    <path d="M20 21q4-3 8 0" stroke-width="2.6"/>
+    <path d="M8 22l4-2M28 22l4-2" stroke="#fff" stroke-width="2" opacity=".6"/>
+    <path d="M14 17q0-5 4-6" stroke="#ff3f7f" stroke-width="2.2"/>
+    ${sparkle(41, 8, 4.5)}`, 'shades'),
+
   // tweezers: silver tweezers pulling a leaf
   tweezers: art(`
     <g transform="rotate(-38 14 32)">

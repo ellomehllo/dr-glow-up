@@ -166,8 +166,8 @@ export class RaspTool extends Tool {
     ctx.save();
     applyHead(ctx, s);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    // where to paint: the scalp and the two brows, dotted until they are done
-    if (!this.outro) {
+    // first use: where to paint, the scalp and the two brows, dotted until they are done
+    if (!this.outro && this.guides) {
       ctx.globalAlpha = a * 0.75;
       ctx.setLineDash([0.1, 13]); ctx.lineDashOffset = -time * 16;
       ctx.lineWidth = 6.5; ctx.strokeStyle = '#ffffff';
@@ -190,7 +190,7 @@ export class RaspTool extends Tool {
       ctx.stroke();
     }
     // first time: a hand shows the stroke along the hairline
-    if (g.hint && !this.tip) {
+    if (this.guides && g.hint && !this.tip) {
       const k = (time * 0.32) % 1, q = guideAt(this.guide, 0.04 + k * (HAIR_END - 0.08));
       ctx.globalAlpha = a * Math.min(1, Math.sin(k * Math.PI) * 2.5);
       drawHand(ctx, q.x + 4, q.y + 8, 0.9);

@@ -38,17 +38,153 @@ function circ(ctx, x, y, r, fill, stroke = LINE, lw = 5) {
   if (stroke) { ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.stroke(); }
 }
 
+// the shelf and the bottles on it: each drawn standing at (x, its base y)
+const SHELF_Y = -150;
+const BOTTLES = [
+  { x: 462, w: 64, h: 146, draw(ctx, x, y) { // dropper bottle
+    rr(ctx, x - 32, y - 92, 64, 92, 16, '#ffb070', LINE, 5); rr(ctx, x - 16, y - 120, 32, 30, 6, '#ffffff', LINE, 4);
+    rr(ctx, x - 10, y - 146, 20, 28, 10, '#ff6fae', LINE, 4); rr(ctx, x - 20, y - 62, 40, 30, 6, '#fffaf0', null);
+  } },
+  { x: 565, w: 70, h: 190, draw(ctx, x, y) { // tall pump bottle
+    rr(ctx, x - 35, y - 150, 70, 150, 20, '#ffffff', LINE, 5); rr(ctx, x - 13, y - 176, 26, 28, 4, '#a6dcff', LINE, 4);
+    ctx.beginPath(); ctx.moveTo(x, y - 176); ctx.lineTo(x, y - 190); ctx.lineTo(x + 33, y - 190); ctx.lineWidth = 6; ctx.strokeStyle = LINE; ctx.stroke();
+    rr(ctx, x - 25, y - 104, 50, 46, 8, '#c6f2dc', null);
+  } },
+  { x: 678, w: 108, h: 86, draw(ctx, x, y) { // cream jar
+    rr(ctx, x - 48, y - 66, 96, 66, 18, '#ffd5e4', LINE, 5); rr(ctx, x - 54, y - 86, 108, 26, 10, '#ff8fb4', LINE, 5);
+  } },
+  { x: 790, w: 92, h: 108, draw(ctx, x, y) { // round serum bottle
+    circ(ctx, x, y - 46, 46, '#c8b6ff', LINE, 5); rr(ctx, x - 16, y - 108, 32, 26, 6, '#ffffff', LINE, 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.ellipse(x - 16, y - 62, 10, 16, -0.4, 0, TAU); ctx.fill();
+  } },
+];
+
 export class Backdrop {
   constructor() {
     this.cloud = cloudSprite();
     this.bubbles = Array.from({ length: 12 }, (_, i) => ({ x: (i * 0.618 + 0.07) % 1, ph: i * 1.7, sp: 0.035 + (i % 4) * 0.012, r: 6 + (i % 5) * 3, off: (i * 0.37) % 1 }));
     this.grad = null; this.gradKey = '';
+    this.cam = null;
+    this.fix();
+  }
+  // a new level: the glass is put back and every bubble floats again
+  fix() {
+    this.glass = { hits: 0, cracks: [], broken: false, shards: [] };
+    for (const b of this.bubbles) b.gone = -1;
+    // the room's things: the clock (knocked crooked, stopped at a time), the lamp (bulb
+    // smashed), the sign and the certificate (crooked), the shelf bottles (knocked off:
+    // falling, then lying on the floor), and marks left on the walls, objects and glass
+    this.things = { clockTilt: 0, clockStop: null, lampOut: false, signTilt: 0, certTilt: 0, bottles: BOTTLES.map(() => null) };
+    this.marks = [];
+  }
+  // what is at room point p: the glass, a thing, the curtains, the wall or the floor
+  thingAt(p) {
+    if (!p) return 'none';
+    if (this.inDoor(p)) return this.glass.broken ? 'door' : 'glass';
+    const T = this.things;
+    if (Math.hypot(p.x - 170, p.y + 620) < 80) return 'clock';
+    if (Math.hypot(p.x - 400, p.y + 380) < 96) return 'lamp';
+    if (Math.abs(p.x + 250) < 82 && Math.abs(p.y + 600) < 82) return 'sign';
+    if (p.x > 466 && p.x < 704 && p.y > -564 && p.y < -386) return 'cert';
+    for (let i = 0; i < BOTTLES.length; i++) {
+      const b = BOTTLES[i];
+      if (!T.bottles[i] && Math.abs(p.x - b.x) < b.w / 2 + 8 && p.y > SHELF_Y - b.h - 10 && p.y < SHELF_Y + 4) return `bottle${i}`;
+    }
+    if ((p.x > -1520 && p.x < -1060) || (p.x > 1060 && p.x < 1520)) return 'curtain';
+    if (p.x > 400 && p.x < 940 && p.y > 330 && p.y < 890) return 'cabinet';
+    return p.y > 880 ? 'floor' : 'wall';
+  }
+  // a mark left on the room at p (kind: scorch, paint, gel, powder, paste, hole, dent,
+  // slice, fog, smudge, scratch, burnhole); one on the glass goes with the glass
+  mark(p, kind, o = {}) {
+    if (!p) return null;
+    const glass = this.thingAt(p) === 'glass';
+    const m = { x: p.x, y: p.y, kind, col: o.col || null, r: o.r || 22, rot: Math.random() * TAU, glass, t: 0, slide: kind === 'slice' && glass ? 1 : 0, drip: kind === 'gel' || kind === 'paint' ? 1 : 0, len: 0 };
+    this.marks.push(m);
+    if (this.marks.length > 80) this.marks.shift();
+    return m;
+  }
+  // the nearest mark of a kind within r of p
+  markNear(p, kind, r) { return this.marks.find((m) => m.kind === kind && Math.hypot(m.x - p.x, m.y - p.y) < r) || null; }
+  // wipe the marks within r of p (the sponge); holes and dents stay
+  wipe(p, r = 60) {
+    const n = this.marks.length;
+    this.marks = this.marks.filter((m) => m.kind === 'hole' || m.kind === 'burnhole' || m.kind === 'dent' || m.kind === 'scorch' || Math.hypot(m.x - p.x, m.y - p.y) > r);
+    return n - this.marks.length;
+  }
+  // knock bottle i off the shelf (it falls to the floor and stays there)
+  knockBottle(i, dir = 1) {
+    const T = this.things;
+    if (T.bottles[i]) return false;
+    T.bottles[i] = { x: BOTTLES[i].x, y: SHELF_Y, vx: dir * (120 + Math.random() * 120), vy: -260, rot: 0, vr: dir * (5 + Math.random() * 4), rest: false };
+    return true;
+  }
+  // screen px to room units (as last drawn)
+  roomAt(x, y) {
+    const c = this.cam;
+    if (!c) return null;
+    return { x: c.ox + (x - c.cx) / c.s, y: c.oy + (y - c.cy) / c.s };
+  }
+  // room units to screen px
+  screenAt(x, y) { const c = this.cam; return { x: c.cx + (x - c.ox) * c.s, y: c.cy + (y - c.oy) * c.s }; }
+  // inside the doorway's opening (room units), above the waiting room's floor
+  inDoor(p) { return !!p && p.x > DOOR.x + 6 && p.x < DOOR.x + DOOR.w - 6 && p.y > DOOR.y + 6 && p.y < FLOOR_IN + 40; }
+  // the mallet hits the glass at room point p: it cracks, and the third hit shatters it
+  hitGlass(p) {
+    const gl = this.glass;
+    if (gl.broken) return 'open';
+    gl.hits++;
+    const rays = [];
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * TAU + Math.random() * 0.5, L = 60 + Math.random() * 120;
+      rays.push([a, L, (Math.random() - 0.5) * 0.5]);
+    }
+    gl.cracks.push({ x: p.x, y: p.y, rays });
+    if (gl.hits < 3) return 'crack';
+    gl.broken = true;
+    for (let k = 0; k < 26; k++) {
+      gl.shards.push({ x: DOOR.x + 40 + Math.random() * (DOOR.w - 80), y: DOOR.y + 60 + Math.random() * 500, vx: (Math.random() - 0.5) * 300, vy: -Math.random() * 200, r: 10 + Math.random() * 22, rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 8, rest: false });
+    }
+    return 'break';
+  }
+  // the bubble under screen point (x, y), popped (returns its centre), or null
+  popBubble(x, y, time) {
+    for (const b of this.bubbles) {
+      const q = this.bubbleAt(b, time);
+      if (q && Math.hypot(q.x - x, q.y - y) <= q.r + 12) { b.gone = q.cycle; return q; }
+    }
+    return null;
+  }
+  bubbleAt(b, time) {
+    const W = this.W, H = this.H;
+    if (!W) return null;
+    const t = b.off + time * b.sp, k = t % 1, cycle = Math.floor(t);
+    if (b.gone === cycle) return null; // popped: back on its next float up
+    return { x: b.x * W + Math.sin(time * 1.3 + b.ph) * 18, y: H * (1.05 - k * 1.15), r: b.r * Math.max(0.8, Math.min(W, H) / 700), k, cycle };
+  }
+  update(dt) {
+    for (const b of this.things.bottles) {
+      if (!b || b.rest) continue;
+      b.vy += 1800 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.rot += b.vr * dt;
+      if (b.y > 900) { b.y = 900; b.rest = true; b.rot = Math.sign(b.vr || 1) * Math.PI / 2; }
+    }
+    for (const m of this.marks) {
+      m.t += dt;
+      if (m.slide) { m.y += dt * 60; if (m.y > FLOOR_IN) m.slide = 0; } // a slice sliding down the glass
+      if (m.drip && m.t < 2.5) m.len = Math.min(60, m.len + dt * 28); // gel and paint run a little
+    }
+    for (const p of this.glass.shards) {
+      if (p.rest) continue;
+      p.vy += 1600 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      if (p.y > FLOOR_IN + 20 + p.r * 0.3) { p.y = FLOOR_IN + 20 + p.r * 0.3; p.rest = true; }
+    }
   }
 
   draw(ctx, W, H, time, cam, hx, hy) {
     ctx.fillStyle = WALL; ctx.fillRect(0, 0, W, H);
     const s = Math.max(0.12, cam.s * K);
     const ox = cam.x * K, oy = cam.y * K;
+    this.cam = { s, ox, oy, cx: cam.cx, cy: cam.cy }; this.W = W; this.H = H;
     // visible room rectangle, for skipping off-screen pattern work
     const x0 = ox - cam.cx / s, x1 = ox + (W - cam.cx) / s, y0 = oy - cam.cy / s, y1 = oy + (H - cam.cy) / s;
     ctx.save();
@@ -65,6 +201,8 @@ export class Backdrop {
     this.cabinet(ctx);
     this.curtains(ctx, y1);
     this.lamp(ctx, time);
+    this.fallen(ctx);
+    this.drawMarks(ctx, false);
     ctx.restore();
     // warm light around the patient
     const hr = Math.max(160, 380 * cam.s);
@@ -189,6 +327,7 @@ export class Backdrop {
     // bench seat and legs, in front of the people on it
     rr(ctx, x + 22, SEAT_Y, w - 44, 48, 18, '#7ccabd', LINE, 5);
     for (const lx of [x + 70, x + w / 2 - 13, x + w - 96]) rr(ctx, lx, SEAT_Y + 48, 26, FLOOR_IN + 14 - SEAT_Y - 48, 8, '#ffffff', LINE, 4);
+    this.drawGlass(ctx, time, x, y, w, h);
     ctx.restore();
     // the frame
     ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
@@ -204,16 +343,20 @@ export class Backdrop {
 
   sign(ctx) {
     const x = -250, y = -600;
+    ctx.save(); ctx.translate(x, y - 78); ctx.rotate(this.things.signTilt); ctx.translate(-x, -(y - 78));
     rr(ctx, x - 78, y - 78, 156, 156, 36, '#ffffff', LINE, 6);
     ctx.beginPath();
     ctx.roundRect(x - 18, y - 52, 36, 104, 10); ctx.roundRect(x - 52, y - 18, 104, 36, 10);
     ctx.fillStyle = '#2fc79f'; ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.0)';
     ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(x - 12, y - 46, 8, 34);
+    ctx.restore();
   }
 
   clock(ctx, time) {
-    const x = 170, y = -620, r = 66;
+    const x = 170, y = -620, r = 66, T = this.things;
+    if (T.clockStop !== null) time = T.clockStop; // stopped: the hands stay put
+    ctx.save(); ctx.translate(x, y); ctx.rotate(T.clockTilt); ctx.translate(-x, -y);
     circ(ctx, x, y, r + 10, '#ffb0c8', LINE, 6);
     circ(ctx, x, y, r, '#ffffff', LINE, 4);
     ctx.strokeStyle = LINE; ctx.lineWidth = 5;
@@ -226,10 +369,16 @@ export class Backdrop {
     ctx.lineWidth = 5; ctx.strokeStyle = '#ff6fae';
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(m) * r * 0.66, y - Math.cos(m) * r * 0.66); ctx.stroke();
     circ(ctx, x, y, 7, LINE, null);
+    if (T.clockStop !== null) { // a cracked face
+      ctx.strokeStyle = 'rgba(85,120,132,0.7)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - 20, y - 50); ctx.lineTo(x - 6, y - 24); ctx.lineTo(x - 26, y - 8); ctx.moveTo(x - 6, y - 24); ctx.lineTo(x + 14, y - 34); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   certificate(ctx) {
     const x = 470, y = -560, w = 230, h = 170;
+    ctx.save(); ctx.translate(x + w / 2, y); ctx.rotate(this.things.certTilt); ctx.translate(-(x + w / 2), -y);
     rr(ctx, x, y, w, h, 10, '#ffcf7a', LINE, 6);
     rr(ctx, x + 18, y + 18, w - 36, h - 36, 4, '#fffaf0', null);
     ctx.strokeStyle = 'rgba(85,120,132,0.55)'; ctx.lineWidth = 5;
@@ -240,30 +389,83 @@ export class Backdrop {
     ctx.fillStyle = '#ff6fae';
     ctx.beginPath(); ctx.moveTo(x + w - 60, y + 128); ctx.lineTo(x + w - 70, y + 160); ctx.lineTo(x + w - 58, y + 152); ctx.lineTo(x + w - 50, y + 164); ctx.lineTo(x + w - 46, y + 130); ctx.fill();
     circ(ctx, x + w - 56, y + 124, 18, '#ffc93c', LINE, 4);
+    ctx.restore();
   }
 
   shelf(ctx) {
-    const y = -150;
+    const y = SHELF_Y;
     rr(ctx, 400, y, 520, 22, 6, '#ffffff', LINE, 5);
     ctx.lineWidth = 5; ctx.strokeStyle = LINE;
     ctx.beginPath(); ctx.moveTo(440, y + 22); ctx.lineTo(460, y + 60); ctx.moveTo(880, y + 22); ctx.lineTo(860, y + 60); ctx.stroke();
-    // dropper bottle
-    rr(ctx, 430, y - 92, 64, 92, 16, '#ffb070', LINE, 5);
-    rr(ctx, 446, y - 120, 32, 30, 6, '#ffffff', LINE, 4);
-    rr(ctx, 452, y - 146, 20, 28, 10, '#ff6fae', LINE, 4);
-    rr(ctx, 442, y - 62, 40, 30, 6, '#fffaf0', null);
-    // tall pump bottle
-    rr(ctx, 530, y - 150, 70, 150, 20, '#ffffff', LINE, 5);
-    rr(ctx, 552, y - 176, 26, 28, 4, '#a6dcff', LINE, 4);
-    ctx.beginPath(); ctx.moveTo(565, y - 176); ctx.lineTo(565, y - 190); ctx.lineTo(598, y - 190); ctx.lineWidth = 6; ctx.stroke();
-    rr(ctx, 540, y - 104, 50, 46, 8, '#c6f2dc', null);
-    // cream jar
-    rr(ctx, 630, y - 66, 96, 66, 18, '#ffd5e4', LINE, 5);
-    rr(ctx, 624, y - 86, 108, 26, 10, '#ff8fb4', LINE, 5);
-    // round serum bottle
-    circ(ctx, 790, y - 46, 46, '#c8b6ff', LINE, 5);
-    rr(ctx, 774, y - 108, 32, 26, 6, '#ffffff', LINE, 4);
-    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.ellipse(774, y - 62, 10, 16, -0.4, 0, TAU); ctx.fill();
+    BOTTLES.forEach((b, i) => { if (!this.things.bottles[i]) b.draw(ctx, b.x, y); });
+  }
+  // bottles knocked off the shelf: falling, then lying on the floor
+  fallen(ctx) {
+    this.things.bottles.forEach((f, i) => {
+      if (!f) return;
+      const b = BOTTLES[i];
+      ctx.save(); ctx.translate(f.x, f.y - b.h / 2); ctx.rotate(f.rot); ctx.translate(-b.x, -(SHELF_Y - b.h / 2));
+      b.draw(ctx, b.x, SHELF_Y);
+      ctx.restore();
+    });
+  }
+  // marks on the room (glass: only the ones on the pane, inside its clip)
+  drawMarks(ctx, glass) {
+    for (const m of this.marks) {
+      if (m.glass !== glass) continue;
+      const { x, y, r } = m;
+      ctx.save();
+      ctx.lineCap = 'round';
+      switch (m.kind) {
+        case 'scorch':
+          ctx.fillStyle = 'rgba(40,24,20,0.55)'; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, m.rot, 0, TAU); ctx.fill();
+          ctx.fillStyle = 'rgba(40,24,20,0.3)'; ctx.beginPath(); ctx.ellipse(x, y - r * 0.7, r * 0.7, r * 1.1, 0, 0, TAU); ctx.fill();
+          break;
+        case 'burnhole':
+          ctx.fillStyle = '#4a2f36'; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.85, m.rot, 0, TAU); ctx.fill();
+          ctx.strokeStyle = 'rgba(40,24,20,0.8)'; ctx.lineWidth = 7; ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,140,60,0.7)'; ctx.lineWidth = 2.5; ctx.stroke();
+          break;
+        case 'hole':
+          ctx.fillStyle = 'rgba(210,210,210,0.55)'; ctx.beginPath(); ctx.arc(x, y, r * 0.9, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#3a2a35'; ctx.beginPath(); ctx.arc(x, y, r * 0.42, 0, TAU); ctx.fill();
+          ctx.strokeStyle = m.glass ? 'rgba(255,255,255,0.95)' : 'rgba(85,120,132,0.7)'; ctx.lineWidth = 2.5; ctx.beginPath();
+          for (let k = 0; k < 5; k++) { const a = m.rot + k * 1.26; ctx.moveTo(x + Math.cos(a) * r * 0.45, y + Math.sin(a) * r * 0.45); ctx.lineTo(x + Math.cos(a) * r * 1.4, y + Math.sin(a) * r * 1.4); }
+          ctx.stroke();
+          break;
+        case 'dent':
+          ctx.fillStyle = 'rgba(85,120,132,0.22)'; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, m.rot, 0, TAU); ctx.fill();
+          ctx.strokeStyle = 'rgba(85,120,132,0.6)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r * 0.8, m.rot, m.rot + 2.4); ctx.stroke();
+          break;
+        case 'paint': case 'gel': case 'paste': {
+          ctx.fillStyle = m.kind === 'paint' ? m.col : m.kind === 'gel' ? 'rgba(63,224,181,0.75)' : 'rgba(255,255,255,0.92)';
+          ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.7, m.rot, 0, TAU); ctx.fill();
+          if (m.len > 1) { ctx.beginPath(); ctx.roundRect(x - 4, y, 8, m.len, 4); ctx.fill(); ctx.beginPath(); ctx.arc(x, y + m.len, 6, 0, TAU); ctx.fill(); }
+          if (m.kind === 'paste') { ctx.strokeStyle = '#6fd3c0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - r * 0.6, y); ctx.quadraticCurveTo(x, y - 6, x + r * 0.6, y); ctx.stroke(); }
+          break;
+        }
+        case 'powder':
+          ctx.fillStyle = 'rgba(255,240,248,0.75)';
+          for (let k = 0; k < 7; k++) { const a = m.rot + k * 0.9, d = (k % 3) * r * 0.35; ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, r * 0.45, 0, TAU); ctx.fill(); }
+          break;
+        case 'fog':
+          ctx.fillStyle = `rgba(255,255,255,${Math.max(0.18, 0.65 - m.t * 0.02)})`; ctx.beginPath(); ctx.ellipse(x, y, r * 1.6, r * 1.2, 0, 0, TAU); ctx.fill();
+          break;
+        case 'smudge': case 'scratch':
+          ctx.strokeStyle = m.kind === 'smudge' ? 'rgba(126,224,184,0.5)' : 'rgba(255,255,255,0.95)'; ctx.lineWidth = m.kind === 'smudge' ? 14 : 2.5;
+          ctx.beginPath(); ctx.moveTo(x - r * Math.cos(m.rot), y - r * Math.sin(m.rot)); ctx.lineTo(x + r * Math.cos(m.rot), y + r * Math.sin(m.rot)); ctx.stroke();
+          break;
+        case 'slice':
+          ctx.translate(x, y); ctx.rotate(m.rot);
+          ctx.fillStyle = '#3f9a4a'; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#c4ef94'; ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          for (let k = 0; k < 6; k++) { const a = k * 1.05; ctx.beginPath(); ctx.ellipse(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5, 2.6, 1.6, a, 0, TAU); ctx.fill(); }
+          ctx.strokeStyle = LINE; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+          break;
+      }
+      ctx.restore();
+    }
   }
 
   cabinet(ctx) {
@@ -307,29 +509,75 @@ export class Backdrop {
   }
 
   lamp(ctx, time) {
-    const hx = 400, hy = -380;
+    const hx = 400, hy = -380, out = this.things.lampOut;
     ctx.strokeStyle = LINE; ctx.lineWidth = 16;
     ctx.beginPath(); ctx.moveTo(980, -1200); ctx.lineTo(700, -800); ctx.lineTo(hx + 70, hy - 70); ctx.stroke();
     ctx.strokeStyle = '#e6e9f2'; ctx.lineWidth = 8;
     ctx.beginPath(); ctx.moveTo(980, -1200); ctx.lineTo(700, -800); ctx.lineTo(hx + 70, hy - 70); ctx.stroke();
     circ(ctx, 700, -800, 16, '#ffc93c', LINE, 5);
-    const pulse = 0.85 + 0.15 * Math.sin(time * 2.2);
-    const g = ctx.createRadialGradient(hx, hy, 40, hx, hy, 260);
-    g.addColorStop(0, `rgba(255,248,210,${0.75 * pulse})`); g.addColorStop(1, 'rgba(255,248,210,0)');
-    ctx.fillStyle = g; ctx.fillRect(hx - 260, hy - 260, 520, 520);
+    if (!out) {
+      const pulse = 0.85 + 0.15 * Math.sin(time * 2.2);
+      const g = ctx.createRadialGradient(hx, hy, 40, hx, hy, 260);
+      g.addColorStop(0, `rgba(255,248,210,${0.75 * pulse})`); g.addColorStop(1, 'rgba(255,248,210,0)');
+      ctx.fillStyle = g; ctx.fillRect(hx - 260, hy - 260, 520, 520);
+    }
     circ(ctx, hx, hy, 92, '#ffffff', LINE, 7);
-    circ(ctx, hx, hy, 70, null, '#fff3a6', 18);
-    circ(ctx, hx, hy, 48, '#e8f8ff', LINE, 4);
+    circ(ctx, hx, hy, 70, null, out ? '#c9ccd8' : '#fff3a6', 18);
+    circ(ctx, hx, hy, 48, out ? '#6b6f80' : '#e8f8ff', LINE, 4);
+    if (out) { // the smashed bulb
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(hx - 30, hy - 20); ctx.lineTo(hx - 4, hy + 2); ctx.lineTo(hx - 18, hy + 30); ctx.moveTo(hx - 4, hy + 2); ctx.lineTo(hx + 28, hy - 8); ctx.stroke();
+    }
     ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.ellipse(hx - 16, hy - 16, 12, 20, -0.6, 0, TAU); ctx.fill();
   }
 
+  // a glass pane across the doorway (clipped to it): a faint blue sheen with two glints,
+  // cracks where the mallet hit; once broken, a few jagged pieces left in the frame and
+  // shards on the waiting room floor
+  drawGlass(ctx, time, x, y, w, h) {
+    const gl = this.glass;
+    ctx.save();
+    if (!gl.broken) {
+      ctx.fillStyle = 'rgba(190,235,255,0.16)'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.32)';
+      for (const [gx, gw] of [[x + 120, 60], [x + 210, 22]]) {
+        ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gx + gw, y); ctx.lineTo(gx + gw - 420, y + h); ctx.lineTo(gx - 420, y + h); ctx.closePath(); ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineCap = 'round';
+      for (const c of gl.cracks) {
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (const [a, L, bend] of c.rays) {
+          ctx.moveTo(c.x, c.y);
+          const mx = c.x + Math.cos(a + bend) * L * 0.5, my = c.y + Math.sin(a + bend) * L * 0.5;
+          ctx.lineTo(mx, my); ctx.lineTo(c.x + Math.cos(a) * L, c.y + Math.sin(a) * L);
+        }
+        ctx.stroke();
+        ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(c.x, c.y, 18, 0, TAU); ctx.stroke();
+      }
+      this.drawMarks(ctx, true);
+    } else {
+      // jagged leftovers round the frame
+      ctx.fillStyle = 'rgba(190,235,255,0.35)'; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + 140, y); ctx.lineTo(x + 60, y + 90); ctx.lineTo(x + 30, y + 260); ctx.lineTo(x, y + 320); ctx.closePath();
+      ctx.moveTo(x + w, y + 40); ctx.lineTo(x + w, y + 380); ctx.lineTo(x + w - 50, y + 240); ctx.lineTo(x + w - 110, y + 120); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      for (const p of gl.shards) {
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.beginPath(); ctx.moveTo(-p.r, p.r * 0.3); ctx.lineTo(0, -p.r * 0.7); ctx.lineTo(p.r * 0.8, p.r * 0.4); ctx.closePath();
+        ctx.fill(); ctx.stroke(); ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
   drawBubbles(ctx, W, H, time) {
-    const base = Math.min(W, H) / 700;
     ctx.lineWidth = 2;
     for (const b of this.bubbles) {
-      const k = (b.off + time * b.sp) % 1;
-      const y = H * (1.05 - k * 1.15), x = b.x * W + Math.sin(time * 1.3 + b.ph) * 18;
-      const r = b.r * Math.max(0.8, base);
+      const q = this.bubbleAt(b, time);
+      if (!q) continue;
+      const { x, y, r, k } = q;
       ctx.globalAlpha = Math.min(1, (1 - k) * 2.2) * 0.6;
       ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
       ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();

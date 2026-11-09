@@ -110,7 +110,7 @@ export class ScrubTool extends Tool {
     ctx.save();
     applyHead(ctx, s);
     // first time: a hand rubs back and forth over a cheek
-    if (g.hint && !this.tip) {
+    if (this.guides && g.hint && !this.tip) {
       ctx.save();
       ctx.globalAlpha = this.alpha;
       drawHand(ctx, Math.sin(time * 3.2) * 70, 40 + Math.cos(time * 6.4) * 10, 0.95);

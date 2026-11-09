@@ -5,6 +5,7 @@
 import { Tool, drawTapHint } from './base.js';
 import { rand, star5 } from '../draw.js';
 import { INK, COL, headToStage, applyHead } from '../patient.js';
+import { onSkin, dab } from './free.js';
 
 export class GoldTool extends Tool {
   constructor(g, def) { super(g, def); this.outroLen = 0.9; this.reset(); }
@@ -24,6 +25,7 @@ export class GoldTool extends Tool {
     return best;
   }
   fixed(i) { return this.g.s.scarH[i] >= 1; }
+  freeSpot(q) { if (!this.free || !onSkin(this.g, q)) return false; dab(this.g, q); return true; } // a dab of gel
   enter() { super.enter(); this.g.s.lookAt = { x: 40, y: -200 }; this.tube = null; }
   // stage-space point at fraction f along scar i
   front(i, f) {
@@ -103,7 +105,7 @@ export class GoldTool extends Tool {
     ctx.globalAlpha = a;
     // a star at the end of every scar still to treat
     s.cracks.forEach((c, i) => {
-      if (this.done[i]) return;
+      if (this.done[i] || !this.guides) return;
       const e = this.front(i, 1), held = i === this.cur;
       const zone = held && this.inZone(this.p), full = held && s.scarF[i] >= 0.995;
       const r = (zone || full ? 14 : 11) * (1 + 0.1 * Math.sin(time * 7 + e.x)) + this.nudge * 4 * Math.sin(time * 20);
@@ -111,7 +113,7 @@ export class GoldTool extends Tool {
       ctx.fillStyle = full ? '#fff3b0' : COL.gold; ctx.fill();
       ctx.lineWidth = 3.5; ctx.strokeStyle = INK; ctx.stroke();
     });
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) {
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) {
       const i = this.nextIndex();
       if (i >= 0) {
         ctx.save(); applyHead(ctx, s);

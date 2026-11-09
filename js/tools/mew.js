@@ -8,15 +8,17 @@ import { INK, COL, headPath, headY, applyHead } from '../patient.js';
 export class MewTool extends Tool {
   constructor(g, def) { super(g, def); this.outroLen = 0.8; }
   targets() { return [{ x: 0, y: 60, r: 260 }]; }
+  get pushes() { return true; }
+  value() { return this.g.s.mew; }
   // anywhere on the patient: head, neck or body
   hitTest(hx, hy, sx, sy) { return !this.done[0] && Math.abs(sx) < 300 && sy > headY(this.g.s) - 230 ? 0 : -1; }
   fixed() { return this.g.s.mew >= 0.9; }
   enter() { super.enter(); this.g.s.lookAt = { x: 0, y: -60 }; }
-  begin() { this.g.react('normal', 99, 'flat'); }
+  begin() { this.startAt(this.g.s.mew); this.g.react('normal', 99, 'flat'); }
   hold(dt, p) {
     super.hold(dt, p);
     const { g } = this, s = g.s;
-    s.mew = p / this.sw.c;
+    s.mew = this.push(p);
     s.lookAt = { x: 0, y: -80 - 60 * Math.min(1.6, s.mew) };
     g.audio.whistle(s.mew);
     const inZone = this.inZone(p);
@@ -24,7 +26,7 @@ export class MewTool extends Tool {
     if (inZone && Math.random() < 0.3) g.fx.spark(rand(-150, 150), rand(-200, 180), { size: rand(7, 11), life: 0.4 });
     this.wasIn = inZone;
   }
-  cancel() { this.g.s.mew = 0; this.g.audio.whistle(-1); this.g.react('normal', 0.01); }
+  cancel() { this.g.s.mew = this.base; this.g.audio.whistle(-1); this.g.react('normal', 0.01); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s;
     g.audio.whistle(-1);
@@ -59,13 +61,15 @@ export class MewTool extends Tool {
     ctx.translate(0, s.bob);
     const hp = headPath(s.jaw);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (this.guides) {
     ctx.setLineDash([0.1, 14]); ctx.lineDashOffset = -time * 20;
     ctx.lineWidth = 9; ctx.strokeStyle = zone ? COL.gold : INK; ctx.globalAlpha = a * (zone ? 1 : 0.55);
     ctx.save(); ctx.scale(s.fx, s.fy); ctx.lineWidth = 9 / Math.max(s.fx, s.fy); ctx.stroke(hp); ctx.restore();
     ctx.setLineDash([]);
+    }
     ctx.globalAlpha = a;
     // up chevrons above the head while waiting, a nudge for the direction
-    if (!this.outro && this.p < 0.05) {
+    if (!this.outro && this.p < 0.05 && this.guides) {
       const top = headY(s) - s.bob - 240, k = (time * 1.5) % 1;
       ctx.lineWidth = 7; ctx.strokeStyle = '#ffffff';
       for (let i = 0; i < 2; i++) {
@@ -75,7 +79,7 @@ export class MewTool extends Tool {
       }
     }
     ctx.restore();
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) {
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) {
       ctx.save(); applyHead(ctx, s);
       drawTapHint(ctx, 0, 40, time, true, a * (g.hint ? 1 : this.nudge), 1);
       ctx.restore();

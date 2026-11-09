@@ -48,7 +48,11 @@ export class Cloud {
   // queue the progress to go up; only the newest one is sent (progress only ever grows)
   save(p) {
     if (!this.on || !p) return;
-    this.want = { p_unlocked: p.unlocked, p_best: p.best.slice() };
+    // only up to the last level played: the save stays short (and within what the
+    // database takes) however many levels the game has
+    const best = p.best.slice();
+    while (best.length && !best[best.length - 1]) best.pop();
+    this.want = { p_unlocked: p.unlocked, p_best: best };
     this.flush();
   }
 

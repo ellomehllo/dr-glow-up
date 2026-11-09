@@ -331,3 +331,39 @@
 /* the kit's style row: the wish glows like a needed treatment, done gets the check */
 .slot.style.need { background: #ffe6f1; box-shadow: 0 0 0 2px var(--pink), 0 6px 14px rgba(255, 116, 177, .3); }
 .slot.style.done { background: #dcf9f0; box-shadow: 0 0 0 1.5px rgba(79, 220, 182, .75); }
+
+/* level 1 coach marks (tutorial.js): a dimmed screen with a soft spotlight cut round one
+   control, and a tip card beside it */
+.tut { position: absolute; inset: 0; z-index: 60; visibility: hidden; pointer-events: none; }
+.tut.on { visibility: visible; pointer-events: auto; }
+.tut-hole {
+  position: fixed; border-radius: 22px; opacity: 0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .9), 0 0 0 9999px rgba(36, 22, 48, .55);
+  transition-property: left, top, width, height, opacity; transition-duration: .3s; transition-timing-function: var(--out);
+}
+.tut.on .tut-hole { opacity: 1; }
+.tut-card {
+  position: fixed; display: grid; gap: 6px; padding: 18px 18px 16px; border-radius: 22px;
+  background: #fff; border: 1px solid transparent; box-shadow: var(--sh-3); color: var(--ink);
+  text-align: left;
+}
+.tut-card.in { animation: tut-in .3s var(--out) both; }
+@keyframes tut-in { from { opacity: 0; translate: 0 12px; filter: blur(4px); } }
+.tut-n { position: absolute; top: 18px; right: 18px; font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tut-k { font-size: 19px; font-weight: 800; letter-spacing: .06em; color: #f0507f; }
+.tut-t { margin: 0 0 8px; font-size: 16px; font-weight: 600; line-height: 1.4; color: var(--ink-2); text-wrap: pretty; }
+.tut-go {
+  justify-self: end; height: 46px; padding: 0 22px; border-radius: 23px; border: 1px solid transparent;
+  font: inherit; font-size: 16px; font-weight: 800; letter-spacing: .08em; color: var(--ink); cursor: pointer;
+  background: linear-gradient(180deg, #ffdb7a, #ffc23d);
+  box-shadow: 0 0 0 1px rgba(245, 165, 36, .3), 0 6px 16px rgba(245, 165, 36, .35), inset 0 1px 0 rgba(255, 255, 255, .7);
+  transition-property: scale; transition-duration: .15s; transition-timing-function: ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.tut-go:active { scale: .96; }
+.tut-go:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .tut-card.in { animation-name: tut-fade; }
+  .tut-hole { transition-property: opacity; }
+}
+@keyframes tut-fade { from { opacity: 0; } }

@@ -5,6 +5,7 @@
 import { Tool, drawTapHint } from './base.js';
 import { TAU, rand, clamp01, smooth } from '../draw.js';
 import { INK, COL, applyHead } from '../patient.js';
+import { onSkin, mark } from './free.js';
 
 const R0 = 34; // ring radius around a just-right nose
 const PIVOT = { x: 124, y: -18 }; // where the mallet swings from (beside the right eye)
@@ -18,6 +19,8 @@ const side = (sz) => ({ x: 4 + 26 * sz, y: 40 + 26 * sz });
 export class NoseTool extends Tool {
   constructor(g, def) { super(g, def); this.outroLen = 0.8; this.reset(); }
   reset() { super.reset(); this.ph = 0.6; this.oinked = false; }
+  get pushes() { return true; }
+  value() { return this.g.s.nose; }
   targets() { return [{ x: 2, y: 58, r: 80 }]; }
   hitTest(hx, hy, sx, sy, minR = 0) {
     if (this.done[0]) return -1;
@@ -26,11 +29,11 @@ export class NoseTool extends Tool {
   }
   fixed() { return this.g.s.nose >= 0.9; }
   enter() { super.enter(); this.reset(); this.g.s.lookAt = { x: 0, y: 40 }; }
-  begin() { this.g.react('normal', 99, 'flat'); this.oinked = false; }
+  begin() { this.startAt(this.g.s.nose); this.g.react('normal', 99, 'flat'); this.oinked = false; }
   hold(dt, p) {
     super.hold(dt, p);
-    const { g } = this, s = g.s, sw = this.sw;
-    s.nose = p / sw.c;
+    const { g } = this, s = g.s;
+    s.nose = this.push(p);
     // the mallet comes down TAPS times a second; each landing is a knock and a squash
     const was = this.ph;
     this.ph += dt * TAPS;
@@ -50,7 +53,7 @@ export class NoseTool extends Tool {
     g.shake(0.01);
     if (Math.random() < 0.3) g.react('squeeze', 0.12, 'flat');
   }
-  cancel() { this.g.s.nose = 0; this.g.react('normal', 0.01); }
+  cancel() { this.g.s.nose = this.base; this.g.react('normal', 0.01); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, c = mid(sizeOf(s.nose)), w = g.head(c.x, c.y);
     this.wasIn = false;
@@ -68,6 +71,12 @@ export class NoseTool extends Tool {
     return result;
   }
   update(dt) { super.update(dt); if (this.cur < 0) this.ph = 0.6; }
+  // off the nose: the mallet smashes the glass in the doorway, or bruises bare skin
+  freeSpot(q) {
+    if (this.g.smash(q)) return true;
+    if (!this.free || !onSkin(this.g, q)) return false;
+    mark(this.g, q, 'bruise', 'BONK!'); this.g.bump(0.4); return true;
+  }
   draw(ctx, time) {
     if (this.alpha < 0.01) return;
     const { g } = this, s = g.s;
@@ -78,7 +87,7 @@ export class NoseTool extends Tool {
     applyHead(ctx, s);
     ctx.globalAlpha = a;
     ctx.lineCap = 'round';
-    if (!this.outro) {
+    if (!this.outro && this.guides) {
       // dotted ring: the size to aim for; solid ring: the nose now, shrinking while held
       const zone = held && this.inZone(this.p), over = held && this.p > this.sw.c + this.sw.w;
       const ideal = mid(1);
@@ -93,7 +102,7 @@ export class NoseTool extends Tool {
       if (!held) { ctx.setLineDash([7, 7]); ctx.lineDashOffset = -time * 30; }
       ctx.stroke(); ctx.setLineDash([]);
     }
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, c.x, c.y, time, true, g.hint ? 1 : this.nudge, 0.9);
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, c.x, c.y, time, true, g.hint ? 1 : this.nudge, 0.9);
     // the mallet: raised and bobbing while waiting, tapping away while held
     const ph = this.ph % 1;
     const up = held ? (ph < 0.3 ? 1 - ph / 0.3 : (ph - 0.3) / 0.7) : 0.8 + Math.sin(time * 3) * 0.1;

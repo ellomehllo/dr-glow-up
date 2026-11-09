@@ -5,6 +5,7 @@
 import { Tool, drawTapHint } from './base.js';
 import { rand, star5 } from '../draw.js';
 import { INK, COL, applyHead } from '../patient.js';
+import { onSkin, dab, mark } from './free.js';
 
 export class IronTool extends Tool {
   constructor(g, def) { super(g, def); this.outroLen = 0.8; this.reset(); }
@@ -27,6 +28,8 @@ export class IronTool extends Tool {
   // head-space point (with direction) at fraction f along wrinkle i
   front(i, f) { const w = this.g.s.wrk[i]; return w.poly.at(w.poly.len * Math.min(1, Math.max(0, f))); }
   fixed(i) { return this.g.s.wrk[i].f >= 1; }
+  // a hot iron on bare skin burns it (a puff of steam, a red mark that fades)
+  freeSpot(q) { if (!this.free || !onSkin(this.g, q)) return false; dab(this.g, q, '#ffffff', true); mark(this.g, q, 'burn', 'SSS!'); return true; }
   enter() { super.enter(); this.reset(); const i = this.nextIndex(); if (i >= 0) this.g.s.lookAt = this.front(i, 0.5); }
   begin(i) { this.g.react('normal', 99, 'flat'); this.g.s.lookAt = this.front(i, 0.5); }
   hold(dt, p) {
@@ -94,14 +97,14 @@ export class IronTool extends Tool {
     ctx.globalAlpha = a;
     // a star at the end of every wrinkle still to iron
     s.wrk.forEach((w, i) => {
-      if (this.done[i]) return;
+      if (this.done[i] || !this.guides) return;
       const e = this.front(i, 1), held = i === this.cur, zone = held && this.inZone(this.p);
       const r = (zone ? 13 : 10) * (1 + 0.1 * Math.sin(time * 7 + i)) + this.nudge * 4 * Math.sin(time * 20);
       star5(ctx, e.x + e.tx * 8, e.y + e.ty * 8, r, -Math.PI / 2);
       ctx.fillStyle = zone ? '#fff3b0' : COL.gold; ctx.fill();
       ctx.lineWidth = 3.5; ctx.strokeStyle = INK; ctx.stroke();
     });
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) {
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) {
       const i = this.nextIndex();
       if (i >= 0) { const m = this.front(i, 0.5); drawTapHint(ctx, m.x, m.y, time, true, g.hint ? 1 : this.nudge, 0.9); }
     }

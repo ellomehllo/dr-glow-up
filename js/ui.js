@@ -9,7 +9,7 @@ import { ICONS, STAR } from './icons.js';
 import { RANKS } from './config.js';
 import { wishMark } from './style.js';
 
-const VERDICT = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!' };
+const VERDICT = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!', over: 'TOO MUCH!' };
 
 export class UI {
   constructor(root, { onMute, onAgain, onNext, onSplit, onGesture, onKit, onKitPick, onKitClose, onSwatch, onStyleDone, onUnlockPlay }) {
@@ -232,7 +232,7 @@ export class UI {
     e.swatches.hidden = !o.swatches;
     e.styCost.hidden = !!o.swatches;
     if (o.swatches) this.markSwatch(o.on);
-    if (def.id === 'gems') this.styleCost(null, o.gems || 0); else this.styleCost(o.cost || 0);
+    if (def.id === 'pierce') this.styleCost(o.cost || 0); else this.styleCost(null, o.count || '0');
     this._sweetKey = null;
     this.setHold(o.t || 0, null, 1);
   }
@@ -243,13 +243,14 @@ export class UI {
       b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
     }
   }
-  // the counter: what piercings take off the aura, or (cost null) how many gems are on
-  styleCost(cost, gems = 0) {
+  // the counter: what piercings take off the aura, or (cost null) what the tap tool has
+  // on: gems or clips stuck on, the sunglasses' name
+  styleCost(cost, count = '0') {
     const c = this.el.styCost;
     if (cost === null) {
-      c.textContent = String(gems);
+      c.textContent = count;
       c.classList.remove('neg');
-      c.setAttribute('aria-label', `${gems} gems`);
+      c.setAttribute('aria-label', `${count} on`);
       return;
     }
     c.textContent = cost ? `-${cost}` : '0';
@@ -456,8 +457,6 @@ export class UI {
       const t = this.el.title;
       return { top, bottom: Math.min(H * 0.42, t.offsetHeight + 40), left: 0, right: 0 };
     }
-    // the open kit covers the bottom: keep the whole face in view above it
-    if (mode === 'kit') return { top, bottom: H - this.el.sheet.offsetTop + 14, left: 0, right: 0 };
     return { top, bottom: this.el.dock.offsetHeight + 14, left: 0, right: 0 };
   }
   // position the slider strip over the free area

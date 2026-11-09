@@ -1,5 +1,6 @@
 // Boot: build everything (all procedural, a few ms), draw the first frame, then tell
 // Playables we are ready. One RAF loop; pauses on hidden tab or Playables pause.
+import { Tutorial } from './tutorial.js';
 import { HoldInput } from './input.js';
 import { Sound } from './audio.js';
 import { UI } from './ui.js';
@@ -50,7 +51,8 @@ playables.onAudioChange((on) => audio.setPlatformAudio(on));
 if (document.fonts && document.fonts.load) document.fonts.load('700 32px Fredoka').catch(() => {});
 
 const director = new Director(VIEWS.intro);
-game = new Game({ ui, audio, input, fx: new FX(), dirt: new Dirt(), director, backdrop: new Backdrop(), playables, cloud });
+const tut = new Tutorial(document.getElementById('ui'), !qs.has('debug') || qs.has('tutorial'));
+game = new Game({ ui, audio, input, fx: new FX(), dirt: new Dirt(), director, backdrop: new Backdrop(), playables, cloud, tut });
 window.__game = game;
 // progress carried over from the game's old address (index.html forwards it here)
 const carry = /[#&]carry=([^&]*)/.exec(location.hash);

@@ -10,6 +10,7 @@
 //         and looser. Let go on the star and it pops out, and a shiny new tooth grows in.
 //         Too early and it won't budge; too late and it comes out with a yelp.
 import { Tool, drawHand, drawTapHint } from './base.js';
+import { onSkin, mark, pinch } from './free.js';
 import { Poly, TAU, rand, ell } from '../draw.js';
 import { INK, applyHead } from '../patient.js';
 import { TEETH, toothAt, inMouth, grime } from '../extras.js';
@@ -104,7 +105,7 @@ export class BrushTeethTool extends MouthTool {
     const { g } = this, s = g.s;
     ctx.save();
     applyHead(ctx, s);
-    if (g.hint && !this.tip) { // first time: a hand scrubs back and forth over the teeth
+    if (this.guides && g.hint && !this.tip) { // first time: a hand scrubs back and forth over the teeth
       ctx.save(); ctx.globalAlpha = this.alpha;
       drawHand(ctx, Math.sin(time * 4) * 30, 120 + Math.cos(time * 8) * 4, 0.6);
       ctx.restore();
@@ -142,11 +143,23 @@ export class DrillTool extends MouthTool {
   constructor(g, def) { super(g, def); this.outroLen = 0.8; this.reset(); }
   reset() { super.reset(); this.list = null; this.acc = 0; this.k = 0; }
   // the cavities this patient came in with (tooth indices), fixed once out
-  teeth() { if (!this.list) this.list = this.g.s.dent.map((d, i) => (d.cav === 1 ? i : -1)).filter((i) => i >= 0); return this.list; }
+  // (a free use fills any tooth that has no filling yet)
+  teeth() {
+    if (!this.list) this.list = this.g.s.dent.map((d, i) => (d.cav === 1 || (this.free && !d.gone && d.cav !== 2) ? i : -1)).filter((i) => i >= 0);
+    return this.list;
+  }
   targets() { return this.teeth().map((i) => ({ ...toothAt(i), r: 8 })); }
+  // on bare skin the bur grazes it
+  freeSpot(q) { if (!this.free || !onSkin(this.g, q)) return false; mark(this.g, q, 'rash', 'BZZT!'); return true; }
   hitR() { return 13; }
   enter() { super.enter(); this.reset(); }
-  begin() { this.k = 0; this.g.react('squeeze', 99, 'aah'); }
+  begin(k) {
+    this.k = 0; this.g.react('squeeze', 99, 'aah');
+    // a healthy tooth (free use): the drill opens a hole first, then fills it
+    const d = this.g.s.dent[this.teeth()[k]];
+    this.made = d.cav === 0;
+    if (this.made) d.cav = 1;
+  }
   hold(dt, p) {
     super.hold(dt, p);
     const { g } = this, s = g.s, i = this.teeth()[this.cur], d = s.dent[i], sw = this.sw;
@@ -165,7 +178,11 @@ export class DrillTool extends MouthTool {
     if (inZone && !this.wasIn) g.audio.tick();
     this.wasIn = inZone;
   }
-  cancel() { const i = this.teeth()[this.cur]; if (i !== undefined) this.g.s.dent[i].fill = 0; this.idle(); this.g.react('normal', 0.01, 'aah'); }
+  cancel() {
+    const i = this.teeth()[this.cur];
+    if (i !== undefined) { const d = this.g.s.dent[i]; d.fill = 0; if (this.made) d.cav = 0; }
+    this.idle(); this.g.react('normal', 0.01, 'aah');
+  }
   idle() { this.g.audio.level('hum', 0); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, d = s.dent[this.teeth()[i]], q = toothAt(this.teeth()[i]), w = g.head(q.x, q.y);
@@ -199,7 +216,7 @@ export class DrillTool extends MouthTool {
     ctx.globalAlpha = this.alpha * (this.outro ? Math.max(0, 1 - this.outroT * 2) : 1);
     if (!this.outro) {
       for (let k = 0; k < T.length; k++) {
-        if (this.done[k] || k === this.cur) continue;
+        if (this.done[k] || k === this.cur || !this.guides) continue;
         ringAt(ctx, T[k].x, T[k].y, 10 + Math.sin(time * 4 + k) * 1.5 + this.nudge * 6 * Math.sin(time * 20), time);
       }
     }
@@ -207,7 +224,7 @@ export class DrillTool extends MouthTool {
     if (this.cur >= 0) at = T[this.cur];
     else { const k = this.nextIndex(); if (k >= 0) at = { x: T[k].x + 6, y: T[k].y + 10 + Math.sin(time * 4) * 3 }; }
     if (at && !this.outro) drawDrill(ctx, at.x, at.y, this.cur >= 0, time);
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) {
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) {
       const k = this.nextIndex();
       if (k >= 0) drawTapHint(ctx, T[k].x, T[k].y, time, true, this.alpha * (g.hint ? 1 : this.nudge), 0.55);
     }
@@ -248,8 +265,11 @@ function drawDrill(ctx, x, y, on, time) {
 export class PliersTool extends MouthTool {
   constructor(g, def) { super(g, def); this.outroLen = 0.9; this.reset(); }
   reset() { super.reset(); this.list = null; this.k = 0; this.fly = []; }
-  teeth() { if (!this.list) this.list = this.g.s.dent.map((d, i) => (d.rot ? i : -1)).filter((i) => i >= 0); return this.list; }
+  // the rotten ones (a free use pulls any tooth; a new one grows back)
+  teeth() { if (!this.list) this.list = this.g.s.dent.map((d, i) => (d.rot || (this.free && !d.gone) ? i : -1)).filter((i) => i >= 0); return this.list; }
   targets() { return this.teeth().map((i) => ({ ...toothAt(i), r: 9 })); }
+  // on bare skin the pliers pinch it
+  freeSpot(q) { if (!this.free || !onSkin(this.g, q)) return false; pinch(this.g, q); return true; }
   fixed(i) { return this.g.s.dent[this.teeth()[i]].gone; }
   hitR() { return 14; }
   enter() { super.enter(); this.reset(); }
@@ -320,14 +340,14 @@ export class PliersTool extends MouthTool {
     }
     if (!this.outro) {
       for (let k = 0; k < T.length; k++) {
-        if (this.done[k] || k === this.cur) continue;
+        if (this.done[k] || k === this.cur || !this.guides) continue;
         ringAt(ctx, T[k].x, T[k].y, 12 + Math.sin(time * 4 + k) * 1.5 + this.nudge * 6 * Math.sin(time * 20), time);
       }
       let at = null, held = this.cur >= 0;
       if (held) { const d = s.dent[this.teeth()[this.cur]]; at = { x: T[this.cur].x + Math.sin(time * 38 + d.wob) * 2.2 * Math.min(1.2, d.out), y: T[this.cur].y + Math.min(1.3, d.out) * 7 }; }
       else { const k = this.nextIndex(); if (k >= 0) at = { x: T[k].x, y: T[k].y + 14 + Math.sin(time * 4) * 3 }; }
       if (at) drawPliers(ctx, at.x, at.y, held);
-      if (!held && (g.hint || this.nudge > 0.05)) {
+      if (!held && this.guides && (g.hint || this.nudge > 0.05)) {
         const k = this.nextIndex();
         if (k >= 0) drawTapHint(ctx, T[k].x, T[k].y, time, true, this.alpha * (g.hint ? 1 : this.nudge), 0.55);
       }

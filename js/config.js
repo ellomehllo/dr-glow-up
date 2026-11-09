@@ -99,7 +99,7 @@ export const TOOLS = [
   },
 ];
 
-// ---------- 50 levels in 5 chapters of 10 ----------
+// ---------- 100 levels in 10 chapters of 10 ----------
 // A level's list starts with the wash and ends with the glow, with its own treatments in
 // between; only some patients come in muddy, so the game drops the wash for the rest.
 // A level that brings in a new treatment has just that one between the wash and the
@@ -107,6 +107,8 @@ export const TOOLS = [
 // what came before (the chapter's own treatments come up more often). Level 10 of each
 // chapter is a boss: everything the chapter unlocked, more treatments, and a higher
 // pass mark.
+// The treatments all arrive in the first five chapters; the style tools keep coming
+// after that, one every chapter or so.
 // Difficulty climbs in a sawtooth: each chapter starts a little easier than the last
 // boss. It narrows the sweet zones (zone), speeds up the bars (speed), nudges sweet
 // centres around (jitter), and brings more dirt, pimples, scars, spots and wrinkles.
@@ -121,7 +123,8 @@ export const INTRO = {
   teeth: 30, rasp: 34, // chapter 4
   iron: 40, // chapter 5
   tweeze: 2, tbrush: 3, drill: 6, pliers: 8, // extras, early in chapter 1
-  dye: 5, lips: 7, pierce: 10, blush: 12, gems: 15, // style tools
+  dye: 5, lips: 7, pierce: 10, blush: 12, gems: 15, glitter: 18, // style tools
+  shadow: 25, freckles: 33, lashes: 44, brows: 53, clips: 64, highlight: 75, shades: 86,
 };
 // the extra tools (extras.js): a patient brings their troubles on top of the level's own
 export const EXTRAS = TOOLS.filter((t) => t.extra).map((t) => t.id);
@@ -139,12 +142,20 @@ export const STYLES = [
   { id: 'pierce', name: 'Piercing', prompt: 'TAP TO PIERCE', icon: 'pierce', kind: 'tap', view: { x: 0, y: -4, r: 250, rel: true } },
   { id: 'blush', name: 'Blush', prompt: 'RUB THE CHEEKS', icon: 'blush', kind: 'colour', view: { x: 0, y: 50, r: 220, rel: true } },
   { id: 'gems', name: 'Face gems', prompt: 'TAP TO STICK', icon: 'gems', kind: 'tap', view: { x: 0, y: 0, r: 250, rel: true } },
+  { id: 'glitter', name: 'Glitter', prompt: 'RUB THE CHEEKS', icon: 'glitter', kind: 'colour', view: { x: 0, y: 50, r: 220, rel: true } },
+  { id: 'shadow', name: 'Eyeshadow', prompt: 'RUB THE LIDS', icon: 'shadow', kind: 'colour', view: { x: 0, y: 0, r: 200, rel: true } },
+  { id: 'freckles', name: 'Freckles', prompt: 'RUB ACROSS THE NOSE', icon: 'freckles', kind: 'colour', view: { x: 0, y: 50, r: 220, rel: true } },
+  { id: 'lashes', name: 'Mascara', prompt: 'RUB THE LASHES', icon: 'lashes', kind: 'colour', view: { x: 0, y: 0, r: 200, rel: true } },
+  { id: 'brows', name: 'Brow tint', prompt: 'RUB THE BROWS', icon: 'brows', kind: 'colour', view: { x: 0, y: -30, r: 200, rel: true } },
+  { id: 'clips', name: 'Hair clips', prompt: 'TAP THE HAIR', icon: 'clips', kind: 'tap', view: { x: 0, y: -96, r: 250, rel: true } },
+  { id: 'highlight', name: 'Highlighter', prompt: 'RUB THE CHEEKBONES', icon: 'highlight', kind: 'colour', view: { x: 0, y: 30, r: 220, rel: true } },
+  { id: 'shades', name: 'Sunglasses', prompt: 'TAP THE EYES', icon: 'shades', kind: 'tap', view: { x: 0, y: 0, r: 220, rel: true } },
 ].sort((a, b) => INTRO[a.id] - INTRO[b.id]);
 export const STYLE_IDS = STYLES.map((t) => t.id);
 // every scored treatment in a fixed reference order; each level shuffles its own set
 // into the order the player has to follow (shown in the HUD, auto-played by Space)
 const SCORED = ['laser', 'pop', 'gold', 'circles', 'iron', 'nose', 'teeth', 'chisel', 'mew', 'rasp'];
-const PER_CHAPTER = [2, 2, 3, 3, 4]; // scored treatments in a chapter's early levels
+const PER_CHAPTER = [2, 2, 3, 3, 4, 4, 4, 5, 5, 5]; // scored treatments in a chapter's early levels
 
 function rng(seed) {
   return () => {
@@ -194,11 +205,11 @@ function makeLevel(n, prev) {
   // the wash always first, the glow always last, the rest shuffled in between
   const mid = orderFor(n, SCORED.filter((id) => set.has(id)), prev && prev.tools.slice(1, -1));
   const tools = ['scrub', ...mid, 'polish'];
-  const d = Math.max(0, Math.min(1, c * 0.19 + k * 0.03 + (boss ? 0.03 : 0) - (fresh.length ? 0.04 : 0)));
+  const d = Math.max(0, Math.min(1, c * 0.1 + k * 0.012 + (boss ? 0.03 : 0) - (fresh.length ? 0.04 : 0)));
   const since = (id) => Math.max(0, n - INTRO[id]);
   return {
     tools, chapter: c, boss, fresh: [...fresh, ...freshX, ...freshS], extra: freshX, style: freshS[0] || null,
-    pass: 50 + 5 * c + (boss ? 5 : 0), // aura needed to unlock the next level
+    pass: 50 + 3 * c + (boss ? 5 : 0), // aura needed to unlock the next level
     zone: round(lerp(1.6, 0.75, d), 100), speed: round(lerp(0.85, 1.42, d), 100), jitter: round(lerp(0, 0.07, d), 1000),
     dirt: round(lerp(0.45, 1, d), 100),
     pimples: Math.min(10, 3 + Math.floor(n / 6) + (n >= 3 && R() < 0.3 ? 1 : 0)),
@@ -208,10 +219,13 @@ function makeLevel(n, prev) {
   };
 }
 export const LEVELS = [];
-for (let n = 0; n < 50; n++) LEVELS.push(makeLevel(n, LEVELS[n - 1]));
+for (let n = 0; n < 100; n++) LEVELS.push(makeLevel(n, LEVELS[n - 1]));
 export const VIEWS = {
   intro: { x: 0, y: 130, r: 420 },
-  pick: { x: 0, y: -10, r: 300, rel: true }, // the whole face, while choosing a tool
+  // while playing the camera holds this one close view of the face; only the mouth tools
+  // (and a tap on the mouth) zoom in closer, and it pulls back only for a new patient
+  // and at the end
+  pick: { x: 0, y: -10, r: 300, rel: true },
   reveal: { x: 0, y: 70, r: 400, rel: true },
   results: { x: 0, y: 40, r: 330, rel: true },
 };

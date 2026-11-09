@@ -1,4 +1,4 @@
-// The run. Fifty levels in five chapters, each with a new patient. The player picks each
+// The run. A hundred levels in ten chapters, each with a new patient. The player picks each
 // treatment the patient needs from the tool kit, in any order, and one controller drives it:
 //   intro | arrive -> pick -> transition -> ready <-> holding | brushing -> outro -> pick ...
 // The kit holds every treatment; ones not unlocked yet are empty slots. Any unlocked one
@@ -19,7 +19,7 @@
 // targets are done. Brush treatments (wash, hair) are dragged over the patient instead.
 // Then the finale (happy hops, sparkle shower, camera flash) and the results screen
 // with a before/after split. Treatments only react through the hooks in tools/base.js.
-// Style tools (hair colour, lipstick, blush, piercings, face gems; style.js) sit in their
+// Style tools (hair colour, makeup, piercings, gems, clips, shades; style.js) sit in their
 // own row of the kit and unlock by level like treatments. A patient can ask for a look (a
 // wish): it joins their order before the glow and scores by how close the result is when
 // the player taps done. Picked otherwise they are free to play with; piercings nobody
@@ -28,18 +28,36 @@
 // a mark, an ouch in their own words, and aura; an eye hurts most. At the end the patient
 // takes the job by the aura and the hurts, in their own temper: happy hops for a good job,
 // anger, tears, a cold shoulder or grumbling for a bad one.
+import { ICONS } from './icons.js';
+import { touch, placeOf } from './world.js';
 import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES, STYLE_IDS } from './config.js';
 import { REGISTRY } from './tools/index.js';
 import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress } from './scoring.js';
 import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, onFace, eyeSide, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
 import { patientFor, randomPatient, pickKind } from './people.js';
 import { rollExtras, inMouth } from './extras.js';
-import { PALETTES, swatchesFor, setPaint, paintNow, onPaint, rubLength, pierceSpot, pierceCost, PIERCE, GEMS, SPOT_AT, rollWish, wishLine, wishPrompt, touched, wishScore } from './style.js';
+import { PALETTES, PAINT_AT, swatchesFor, setPaint, paintNow, onPaint, rubLength, pierceSpot, pierceCost, PIERCE, GEMS, CLIPS, SHADES, nextShades, onEyes, SPOT_AT, rollWish, wishLine, wishPrompt, touched, wishScore } from './style.js';
 import { HURT, HURT_KIND, temperOf, lineFor, feelingFor, faceFor, BAD } from './mood.js';
 import { easeIO, rand, TAU, shuffle } from './draw.js';
 import { WaitingRoom, DOOR } from './waiting.js';
 import { K as ROOM_K } from './backdrop.js';
 
+// tools the player has finished a real treatment with; their in-world guides stop then
+const KNOWN_KEY = new URLSearchParams(location.search).has('debug') ? 'marblemaxx.known.debug' : 'marblemaxx.known';
+function loadKnown() { try { return new Set(JSON.parse(localStorage.getItem(KNOWN_KEY) || '[]')); } catch { return new Set(); } }
+// tools with no in-world tool of their own: their kit icon is held instead (drawHeld)
+const HELD_ICON = new Set(['pop', 'mew']);
+const HELD = {};
+function heldImage(icon) {
+  if (!HELD[icon]) {
+    const img = new Image();
+    const svg = (ICONS[icon] || '').replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" ');
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    HELD[icon] = img;
+  }
+  return HELD[icon];
+}
+const PEEK = 1.7; // seconds a look in the mouth (or at the waiting room window) lasts
 const TAP_IGNORE = 0.06; // a release before this much progress is a false start, not a release
 const TRANSITION = 0.9;
 const FINALE = 2.2;
@@ -84,7 +102,7 @@ export class Game {
     this.waiting.fill(this.level);
     this.g = {
       s, fx: this.fx, audio: this.audio, dirt: this.dirt, time: 0,
-      prog: 0, ghost: -1, hint: false, fail: 0, hit: 0,
+      prog: 0, ghost: -1, hint: false, fail: 0, hit: 0, known: loadKnown(),
       head: (x, y) => headToStage(s, x, y),
       shake: (a) => this.director.shake(a),
       bump: (a) => this.director.bump(a),
@@ -92,15 +110,19 @@ export class Game {
       react: (e, d, m) => react(s, e, d, m),
       hurt: (x, y, kind, free) => this.hurtAt(x, y, kind, free),
       sting: (side) => this.sting(side),
+      env: (q, dt) => this.env(q, dt),
+      smash: (q) => this.smash(q),
     };
     this.tools = []; this.defs = [];
     this.spares = {}; this.spare = false; // free uses of tools (by id), and whether the one out is one
     this.buildTools();
+    // a returning player already knows every tool from the levels they've passed
+    if (!this.g.known.size) for (const id of Object.keys(REGISTRY)) if (INTRO[id] < this.progress.unlocked - 1) this.learn(id);
     this.entered = new Set();
     this.used = new Set(); // treatments (index into defs) finished on this patient
     this.tool = null; this.idx = -1;
     this.style = null; // the style tool out: { def, i, down, last, rub } (style mode; i: its place in the order, or -1)
-    this.swatch = { dye: 'pink', lips: 'red', blush: 'pink' }; // the colour picked last, per tool
+    this.swatch = { dye: 'pink', lips: 'red', blush: 'pink', glitter: 'gold', shadow: 'pink', freckles: 'brown', lashes: 'black', brows: 'brown', highlight: 'pearl' }; // the colour picked last, per tool
     this.clearHurts();
     this.seenHint = new Set();
     this.mode = 'boot';
@@ -182,9 +204,24 @@ export class Game {
   isOpen(id) { return INTRO[id] < Math.max(this.progress.unlocked, this.level + 1); }
 
   view(v) { return { x: v.x || 0, y: v.y + (v.rel ? headBase(this.s) : 0), r: v.r }; }
+  // where the camera goes for a tool: the mouth tools (teeth, lipstick) zoom in on the
+  // mouth; everything else keeps the close view of the face, so the camera never pulls
+  // back while the player works (posture follows the head from a little lower)
+  viewFor(def) {
+    if (def.mouth || def.id === 'teeth' || def.id === 'lips') return def.view;
+    return def.id === 'mew' ? { ...VIEWS.pick, y: VIEWS.pick.y + 40 } : VIEWS.pick;
+  }
 
   // ---------- flow ----------
-  setMode(m) { this.mode = m; this.modeT = 0; this.syncKit(); }
+  setMode(m) { this.mode = m; this.modeT = 0; this.syncKit(); this.coach(m); }
+  // level 1 teaches as it goes: the order, aura and kit at the first pick, how to hold or
+  // rub at the first of each, the scoring on the results (tutorial.js; each shows once)
+  coach(m) {
+    if (!this.tut || this.level !== 0) return;
+    if (m === 'pick') this.after(0.35, () => { if (this.mode === 'pick') this.tut.moment('pick'); });
+    else if (m === 'ready') this.tut.moment(this.tool.def.brush ? 'brush' : 'hold');
+    else if (m === 'results') this.after(1.4, () => { if (this.mode === 'results') this.tut.moment('results'); });
+  }
   after(t, fn) { this.timers.push({ t: this.g.time + t, fn }); }
   start() {
     this.setMode('intro');
@@ -246,13 +283,12 @@ export class Game {
     this.ui.openKit();
     this.syncKit();
     this.audio.tick();
-    this.director.setObstruction(this.ui.obstruction('kit'));
+    if (this.tut && this.level === 0) this.after(0.4, () => { if (this.ui.kitOpen) this.tut.moment('kit'); });
   }
   closeKit() {
     if (!this.ui.kitOpen) return;
     this.ui.closeKit();
     this.syncKit();
-    this.director.setObstruction(this.ui.obstruction('play'));
   }
   // a slot in the kit was picked: start that treatment, or say why not (returns false)
   choose(id) {
@@ -291,13 +327,13 @@ export class Game {
     const s = this.s, colour = !!PALETTES[id];
     if (colour && !(s[id] && s[id].id === this.swatch[id])) setPaint(s, id, this.swatch[id]);
     s.lookAt = null;
-    this.director.go(this.view(def.view), TRANSITION);
+    this.director.go(this.view(this.viewFor(def)), TRANSITION);
     this.director.setObstruction(this.ui.obstruction('play'));
     this.ui.titleCard(false);
     this.ui.showStyle(def, {
       prompt: wish ? wishPrompt(wish) : def.prompt, i,
       swatches: colour ? swatchesFor(s, id) : null, on: this.swatch[id], want: wish && colour ? wish.want : null,
-      t: colour ? s[id].t : 0, cost: pierceCost(s), gems: s.gems.length,
+      t: colour ? s[id].t : 0, cost: pierceCost(s), count: this.styleCount(id),
     });
     this.ui.markNext(-1);
     this.audio.whoosh(0.1);
@@ -342,7 +378,15 @@ export class Game {
     if (src === 'key') { this.endStyle(); return; } // Space: done
     const q = this.pointer();
     if (PALETTES[st.def.id]) { st.down = true; st.last = q; return; }
-    if (st.def.id === 'pierce') this.pierce(q); else this.stick(q);
+    const id = st.def.id;
+    if (id === 'pierce') this.pierce(q); else if (id === 'clips') this.clip(q); else if (id === 'shades') this.shade(q); else this.stick(q);
+  }
+  // what a tap tool's counter shows: gems or clips on, or the sunglasses' name
+  styleCount(id) {
+    const s = this.s;
+    if (id === 'clips') return String(s.clips.length);
+    if (id === 'shades') return s.shades ? SHADES.find((d) => d.id === s.shades).name : 'OFF';
+    return String(s.gems.length);
   }
   // rubbing blends the colour in, by how far the finger travels over the hair, lips or cheeks
   rub() {
@@ -361,7 +405,7 @@ export class Game {
     }
     this.ui.setHold(p.t, null, 1);
     if (was < 1 && p.t >= 1) {
-      const c = headToStage(s, 0, { dye: -150, lips: 126, blush: 68 }[id]);
+      const c = headToStage(s, 0, PAINT_AT[id]);
       this.fx.glitter(c.x, c.y, 16, 320);
       this.fx.burst(c.x, c.y, 8, 300);
       this.audio.sparkle();
@@ -419,7 +463,44 @@ export class Game {
       this.director.bump(0.2);
       react(s, 'happy', 0.6, 'o');
     }
-    this.ui.styleCost(null, s.gems.length);
+    this.ui.styleCost(null, this.styleCount('gems'));
+    this.refreshKit();
+  }
+  // a tap on the hair clips one in (bow, star, heart in turn); a tap on one takes it out
+  clip(q) {
+    const s = this.s;
+    const k = s.clips.findIndex((c) => Math.hypot(c.x - q.x, c.y - q.y) < 20);
+    if (k >= 0) {
+      const c = s.clips.splice(k, 1)[0], at = headToStage(s, c.x, c.y);
+      this.fx.ring(at.x, at.y, 4, 22, 0.3, '#ffffff', 4);
+      this.audio.tick();
+    } else {
+      if (!onPaint('dye', q.x, q.y)) { this.miss(q); return; }
+      if (s.clips.length >= CLIPS.max) { this.ui.toast('NO MORE ROOM'); this.audio.tink(0.5); return; }
+      this.clipN = (this.clipN || 0) + 1;
+      s.clips.push({ x: q.x, y: q.y, kind: CLIPS.kinds[this.clipN % CLIPS.kinds.length], rot: rand(-0.5, 0.5) });
+      const at = headToStage(s, q.x, q.y);
+      this.fx.burst(at.x, at.y, 6, 220, { size: rand(8, 12) });
+      this.audio.tink(1.6);
+      this.director.bump(0.2);
+      react(s, 'happy', 0.6, 'o');
+    }
+    this.ui.styleCost(null, this.styleCount('clips'));
+    this.refreshKit();
+  }
+  // a tap over the eyes puts sunglasses on; each tap tries the next pair, then takes them off
+  shade(q) {
+    const s = this.s;
+    if (!onEyes(q.x, q.y)) { this.miss(q); return; }
+    s.shades = nextShades(s.shades);
+    const at = headToStage(s, 0, 16);
+    if (s.shades) {
+      this.fx.burst(at.x, at.y, 8, 260, { size: rand(8, 12) });
+      this.audio.tink(1.4);
+      react(s, 'happy', 0.9, 'grin');
+    } else { this.fx.ring(at.x, at.y, 6, 60, 0.3, '#ffffff', 4); this.audio.tick(); }
+    this.director.bump(0.2);
+    this.ui.styleCost(null, this.styleCount('shades'));
     this.refreshKit();
   }
   // scripted (?debug test runs): the wish done just as asked
@@ -429,6 +510,8 @@ export class Game {
     const w = this.defs[st.i].wish, s = this.s;
     if (PALETTES[w.id]) { this.pickSwatch(w.want); s[w.id].t = 1; }
     else if (w.id === 'pierce') { const a = SPOT_AT[w.want], p = pierceSpot(a.x, a.y); p.cost = 0; s.pierced.push(p); }
+    else if (w.id === 'shades') s.shades = w.want;
+    else if (w.id === 'clips') for (let k = 0; k < w.want; k++) s.clips.push({ x: -80 + k * 60, y: -180, kind: CLIPS.kinds[k % 3], rot: 0 });
     else for (let k = 0; k < w.want; k++) s.gems.push({ x: -60 + k * 40, y: -110, kind: GEMS.kinds[k % 3], rot: 0 });
   }
   // the first unfinished treatment in the row: the one to do next
@@ -444,7 +527,7 @@ export class Game {
     this.s.lookAt = null;
     this.ui.titleCard(false);
     this.director.go(this.view(VIEWS.pick), TRANSITION);
-    this.director.setObstruction(this.ui.obstruction(this.ui.kitOpen ? 'kit' : 'play'));
+    this.director.setObstruction(this.ui.obstruction('play'));
     this.ui.pickPrompt(this.used.size / this.defs.length);
     this.ui.markNext(this.nextIdx());
     this.setMode('pick');
@@ -464,6 +547,7 @@ export class Game {
     resetState(this.before, this.setup);
     this.dirt.setup(this.setup);
     this.buildTools();
+    this.backdrop.fix(); // the room is put right for every level
     this.fx.clear();
     this.audio.stopLoops();
     this.scores = []; this.verdicts = []; this.timers = [];
@@ -497,7 +581,7 @@ export class Game {
   // a free use of a tool: one this patient doesn't need, or needs but has had already. It
   // scores nothing; it keeps its own progress until it is finished
   beginSpare(id) {
-    if (!this.spares[id]) this.spares[id] = new REGISTRY[id](this.g, this.defFor(id));
+    if (!this.spares[id]) { this.spares[id] = new REGISTRY[id](this.g, this.defFor(id)); this.spares[id].free = true; }
     this.beginTool(-1, this.spares[id]);
   }
   beginTool(i, spare = null) {
@@ -506,17 +590,18 @@ export class Game {
     this.ui.closeKit();
     // a glow carries on from what it had; everything else starts each target from zero
     this.idx = i; this.tool = tool; this.p = def.multiHold ? tool.p : 0; this.sweet = null;
-    this.ghost = !this.seenHint.has(def.id);
+    this.ghost = !spare && !this.g.known.has(def.id) && !this.seenHint.has(def.id);
     tool.outro = false; tool.outroT = 0;
     // first time out it sets up; picked again after being left, it carries on
     if (tool.begun) tool.resume(); else { tool.enter(); tool.begun = true; }
     this.entered.add(tool);
     if (spare && !def.brush) {
-      // what is already fine needs nothing; with nothing left it says so (and stays out)
-      tool.done = tool.done.map((d, k) => d || tool.fixed(k));
+      // what is already fine is skipped, except by the one-value treatments, which carry
+      // on from how the patient is (and can overdo it); with nothing left it says so
+      tool.done = tool.done.map((d, k) => d || (!tool.pushes && tool.fixed(k)));
       if (tool.left() === 0) this.after(TRANSITION * 0.7, () => { if (this.tool === tool) this.ui.toast('NOTHING TO FIX'); });
     }
-    this.director.go(this.view(def.view), TRANSITION);
+    this.director.go(this.view(this.viewFor(def)), TRANSITION);
     this.director.setObstruction(this.ui.obstruction('play'));
     this.ui.titleCard(false);
     this.ui.showTool(def, i);
@@ -547,15 +632,101 @@ export class Game {
     const i = tool.hitTest(q.x, q.y, q.sx, q.sy, FINGER / this.director.out.s);
     if (i >= 0) this.startHold(i); else this.wrongSpot(q, tool);
   }
-  // a press that missed every target: on the face it hurts there (the eyes most), unless it
-  // was only just off a target; off the face it is only a ripple
+  // a press that missed every target: whatever the tool does there anyway (tweezers pluck
+  // a hair...); a free use never hurts, only ripples; a needed tool on the face hurts there
+  // (the eyes most), unless it was only just off a target; off the face only a ripple
   wrongSpot(q, tool) {
+    if (eyeSide(this.s, q.x, q.y) >= 0) { tool.nudge = 0; this.hurtAt(q.x, q.y, HURT_KIND[tool.def.id] || 'bruise'); return; } // any tool in an eye hurts
+    if (tool.freeSpot(q)) return;
+    if (touch(this, tool.def.id, q)) { tool.nudge = 0; return; } // what the real tool does there (world.js)
+    if (this.spare) { this.miss(q); return; }
     const minR = FINGER / this.director.out.s;
     const near = tool.targets().some((t, i) => !tool.done[i] && Math.hypot(q.x - t.x, q.y - t.y) <= Math.max(tool.hitR(t), minR) + 18);
     if (near || !(onFace(q.x, q.y, 4) || eyeSide(this.s, q.x, q.y) >= 0)) { this.miss(q); return; }
     if (tool.def.mouth && inMouth(q.x, q.y)) { this.miss(q); return; } // a wrong tooth: no harm
     tool.nudge = 1;
     this.hurtAt(q.x, q.y, HURT_KIND[tool.def.id] || 'bruise');
+  }
+
+  // ---------- the tool in hand ----------
+  // tools that don't draw themselves (pop, mew, every style tool) show their kit icon:
+  // at the finger while it is down, bobbing beside the face while it is up
+  drawHeld(ctx, time) {
+    const id = this.style ? this.style.def.icon : this.tool && HELD_ICON.has(this.tool.def.id) && this.entered.has(this.tool) && !this.tool.outro ? this.tool.def.icon : null;
+    if (!id || !PLAYING.has(this.mode) || this.mode === 'transition') return;
+    const img = heldImage(id);
+    if (!img.complete || !img.naturalWidth) return;
+    const S = 92 / this.director.out.s; // about 92 px on screen at any zoom
+    let x, y;
+    if (this.input.held && this.input.src === 'pointer') { const q = this.pointer(); x = q.sx + S * 0.18; y = q.sy - S * 0.62; }
+    else { const h = headToStage(this.s, 168, -40); x = h.x; y = h.y + Math.sin(time * 3) * 8; }
+    ctx.save();
+    ctx.shadowColor = 'rgba(58,39,71,0.25)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+    ctx.drawImage(img, x - S / 2, y - S / 2, S, S);
+    ctx.restore();
+  }
+
+  // ---------- the room ----------
+  // the laser off the patient (q: the finger, stage and head space): it pops a bubble,
+  // glances off the glass in the doorway, or (the glass gone) hits whoever waits there,
+  // who runs off. Returns what it hit, for the beam.
+  env(q, dt) {
+    const sc = this.director.toScreen(q.sx, q.sy), b = this.backdrop, time = this.g.time;
+    const pop = b.popBubble(sc.x, sc.y, time);
+    if (pop) {
+      this.fx.ring(q.sx, q.sy, 4, 30, 0.3, '#ffffff', 3);
+      this.fx.burst(q.sx, q.sy, 5, 160, { size: rand(6, 9) });
+      this.audio.pop(1.8);
+      return 'bubble';
+    }
+    const P = placeOf(this, q);
+    if (P.at === 'glass' || P.at === 'customer') this.lookWindow();
+    if (P.at === 'glass') {
+      this.glintT = (this.glintT || 0) - dt;
+      if (this.glintT <= 0) { this.glintT = 0.12; this.fx.spark(q.sx + rand(-8, 8), q.sy + rand(-8, 8), { size: rand(8, 12), col: '#ffffff', vy: -40, life: 0.3 }); }
+      return 'glass';
+    }
+    if (P.at === 'customer') {
+      this.zapT = (this.zapT || 0) + dt;
+      if (this.zapT > 0.2) {
+        this.zapT = 0;
+        this.waiting.zap(P.w);
+        this.fx.text(q.sx, q.sy - 40, 'OUCH!', '#ff7d9a', 28, 1);
+        this.fx.puff(q.sx, q.sy, 3, '120,110,120');
+        this.audio.nick();
+        react(this.s, 'wide', 1.2, 'o'); // the patient in the chair can't believe it
+      }
+      return 'customer';
+    }
+    this.zapT = 0;
+    // anything else it rests on burns: the clothes, the walls, the curtains, the lamp
+    const h = this.laserHot;
+    if (h && Math.hypot(h.x - q.sx, h.y - q.sy) < 24 / this.director.out.s) h.t += dt;
+    else this.laserHot = { x: q.sx, y: q.sy, t: 0 };
+    if (this.laserHot.t > 0.6) { this.laserHot.t = 0; this.worldLast = null; touch(this, 'laser', q, { brush: true, hot: true }); }
+    return P.at === 'none' ? null : 'room';
+  }
+  // the mallet off the patient: on the glass it cracks it, the third hit shatters it.
+  // Returns true when it hit the glass.
+  smash(q) {
+    const sc = this.director.toScreen(q.sx, q.sy), b = this.backdrop, p = b.roomAt(sc.x, sc.y);
+    if (!b.inDoor(p) || b.glass.broken) return false;
+    const r = b.hitGlass(p);
+    this.lookWindow();
+    this.director.shake(r === 'break' ? 0.02 : 0.008);
+    if (r === 'break') {
+      this.fx.burst(q.sx, q.sy, 14, 520, { size: rand(10, 16), col: '#d8f4ff' });
+      this.fx.text(q.sx, q.sy - 50, 'SMASH!', '#ffffff', 34, 1.1);
+      this.audio.nick(); this.audio.boing(0.6);
+      this.waiting.react('eye');
+      react(this.s, 'wide', 1.4, 'o');
+    } else {
+      this.fx.ring(q.sx, q.sy, 6, 40, 0.3, '#ffffff', 4);
+      this.fx.text(q.sx, q.sy - 40, 'CRACK!', '#ffffff', 24, 0.8);
+      this.audio.tink(0.7);
+      this.waiting.react('skin');
+    }
+    return true;
   }
 
   // ---------- hurts and feelings (mood.js) ----------
@@ -655,15 +826,44 @@ export class Game {
       const m = headToStage(s, 30, 132); this.fx.puff(m.x, m.y, 1, '235,235,245');
     }
   }
+  // the camera turns to the waiting room window for as long as a look in the mouth lasts
+  // (a tap on it, or a tool at the glass or the customers), then back to what it was on
+  lookWindow() {
+    const t = this.g.time, first = !(this.windowT > t);
+    this.windowT = t + PEEK;
+    if (!first) return; // already looking: the hold just runs longer
+    this.director.go(WAIT_VIEW, 0.5);
+    const back = () => {
+      if (this.g.time < this.windowT) { this.after(this.windowT - this.g.time, back); return; } // looked again since
+      this.windowT = 0;
+      if (PLAYING.has(this.mode)) this.director.go(this.view(this.backView()), 0.6);
+    };
+    this.after(PEEK, back);
+  }
+  // the view the game is on when it isn't looking at the window
+  backView() {
+    if (this.style) return this.viewFor(this.style.def);
+    if (this.tool && this.mode !== 'pick' && this.mode !== 'outro') return this.viewFor(this.tool.def);
+    return VIEWS.pick;
+  }
+  // a tap on the room by the doorway while picking: a look at the window
+  peekWindow() {
+    const P = placeOf(this, this.pointer());
+    if (!P.p || P.p.x > DOOR.x + DOOR.w + 150) return false;
+    this.lookWindow();
+    this.waiting.react('perfect');
+    this.audio.tick();
+    return true;
+  }
   // a tap on the mouth while picking: they open wide for a moment, teeth and all
   peek() {
     const q = this.pointer(), s = this.s;
     if (!inMouth(q.x, q.y)) return false;
     react(s, 'normal', 1.8, 'aah');
     s.lookAt = { x: 0, y: 200 };
-    this.after(1.8, () => { if (this.mode === 'pick') s.lookAt = null; });
+    this.after(PEEK + 0.1, () => { if (this.mode === 'pick') s.lookAt = null; });
     this.director.go(this.view({ x: 0, y: 120, r: 170, rel: true }), 0.5);
-    this.after(1.7, () => { if (this.mode === 'pick') this.director.go(this.view(VIEWS.pick), 0.6); });
+    this.after(PEEK, () => { if (this.mode === 'pick') this.director.go(this.view(VIEWS.pick), 0.6); });
     this.audio.boing(1.2);
     return true;
   }
@@ -696,7 +896,8 @@ export class Game {
   // one target let go: score it against its own sweet zone
   releaseTarget() {
     const tool = this.tool, i = tool.cur, n = tool.targets().length;
-    let r = scoreRelease(this.p, this.sweet);
+    // a free use of a one-value treatment: no timing to judge, only whether it went too far
+    let r = this.spare && tool.pushes ? { score: 0, verdict: tool.over() ? 'late' : 'good', free: true } : scoreRelease(this.p, this.sweet);
     r = tool.releaseTarget(i, this.p, r) || r;
     tool.done[i] = true; tool.cur = -1;
     tool.tScores.push(r.score); tool.tVerdicts.push(r.verdict);
@@ -714,7 +915,14 @@ export class Game {
       const count = (v) => tool.tVerdicts.filter((x) => x === v).length;
       verdict = avg >= 95 ? 'perfect' : avg >= 80 ? 'good' : count('late') > count('early') ? 'late' : 'early';
     }
-    this.finishTool({ score: avg, verdict });
+    this.finishTool({ score: avg, verdict, free: r.free });
+  }
+  // a tool's first real treatment is done: from now on it shows no guides
+  learn(id) {
+    const k = this.g.known;
+    if (k.has(id)) return;
+    k.add(id);
+    try { localStorage.setItem(KNOWN_KEY, JSON.stringify([...k])); } catch { /* not saved: guides again next visit */ }
   }
   finishTool(result) {
     const tool = this.tool;
@@ -725,6 +933,7 @@ export class Game {
       this.scores[this.idx] = result.score;
       this.verdicts[this.idx] = result.verdict;
       this.used.add(this.idx);
+      this.learn(tool.def.id);
     }
     this.refreshKit();
     this.feedback(result);
@@ -750,7 +959,7 @@ export class Game {
   feedback(r, scored = !!this.tool.def.scored && !this.spare) {
     const s = this.s;
     const good = r.verdict === 'perfect' || r.verdict === 'good';
-    this.ui.stamp(r.score, good ? r.verdict : 'fail', r.verdict, scored);
+    this.ui.stamp(r.score, good ? r.verdict : 'fail', r.free && !good ? 'over' : r.verdict, scored);
     this.audio.stamp();
     if (good) {
       this.audio.success();
@@ -901,12 +1110,13 @@ export class Game {
     if (this.mode === 'results') {
       this.director.setObstruction(this.ui.obstruction('results'), true);
       this.ui.layoutSplit(this.director.obsGoal);
-    } else this.director.setObstruction(this.ui.obstruction(this.mode === 'intro' ? 'intro' : this.ui.kitOpen ? 'kit' : 'play'), true);
+    } else this.director.setObstruction(this.ui.obstruction(this.mode === 'intro' ? 'intro' : 'play'), true);
   }
 
   // ---------- input ----------
   onDown(src) {
     this.audio.init();
+    if (this.tut && this.tut.active) return; // a coach mark is up: it takes the press
     const m = this.mode;
     // with the kit open, presses land on the kit; only Space gets here (it closes the kit)
     if (this.ui.kitOpen) this.closeKit();
@@ -914,7 +1124,7 @@ export class Game {
     // else opens the kit; Space takes the next treatment
     if (m === 'intro' || m === 'arrive' || m === 'pick') {
       if (src === 'key') this.chooseNext();
-      else if (m === 'pick' && this.peek()) return;
+      else if (m === 'pick' && (this.peek() || this.peekWindow())) return;
       else this.openKit();
       return;
     }
@@ -997,7 +1207,11 @@ export class Game {
         break;
       }
       case 'brushing': {
-        tool.brush(dt, this.brushKey ? null : this.pointer());
+        const bq = this.brushKey ? null : this.pointer();
+        tool.brush(dt, bq);
+        if (bq && def.id !== 'laser') touch(this, def.id, bq, { brush: true, dt }); // off its own ground (world.js)
+        // any brush dragged into an eye hurts (soap and the laser have their own sting)
+        if (bq && def.id !== 'scrub' && def.id !== 'laser' && eyeSide(this.s, bq.x, bq.y) >= 0) this.hurtAt(bq.x, bq.y, HURT_KIND[def.id] || 'rash');
         prog = tool.coverage();
         this.ui.setHold(prog, null, 1);
         if (tool.complete() && !this.spare) this.finishTool(tool.result()); // a free use brushes on until put away
@@ -1025,6 +1239,7 @@ export class Game {
     tickPatient(s, dt, time);
     if (this.mode === 'results') tickPatient(this.before, dt, time);
     this.waiting.update(dt, time);
+    this.backdrop.update(dt);
     if (tool && this.entered.has(tool) && this.mode !== 'finale' && this.mode !== 'results') tool.update(dt);
     // once glowing, the skin keeps twinkling
     if (s.shine >= 1 && this.mode !== 'boot') {
@@ -1067,6 +1282,7 @@ export class Game {
     d.apply(ctx);
     const tool = this.tool;
     if (tool && this.entered.has(tool) && this.mode !== 'finale' && this.mode !== 'results') tool.draw(ctx, time);
+    this.drawHeld(ctx, time);
     this.fx.draw(ctx);
     ctx.restore();
     if (split) {

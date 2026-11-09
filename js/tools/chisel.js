@@ -14,6 +14,9 @@ export class ChiselTool extends Tool {
     this.reset();
   }
   reset() { super.reset(); this.tap = 0; this.roll = 0; this.segs = null; this.pos = null; }
+  get pushes() { return true; }
+  value() { return this.g.s.jaw; }
+  begin() { this.startAt(this.g.s.jaw); }
   targets() { return [{ x: 0, y: 150, r: 160 }]; }
   // the lower face, the jaw and the roller itself
   hitTest(hx, hy, sx, sy, minR = 0) {
@@ -32,7 +35,7 @@ export class ChiselTool extends Tool {
   hold(dt, p) {
     super.hold(dt, p);
     const { g } = this, def = this.def, s = g.s, sw = this.sw;
-    s.jaw = Math.min(1.35, p / sw.c);
+    s.jaw = Math.min(1.35, this.push(p));
     s.nick = p > sw.c + sw.w ? (p - sw.c - sw.w) / (def.hold.max - sw.c - sw.w) : 0;
     this.pos = guideAt(this.segs, this.tOf(p));
     this.roll += dt * 9;
@@ -49,7 +52,7 @@ export class ChiselTool extends Tool {
       if (Math.random() < 0.25) g.react(s.nick > 0 ? 'squeeze' : 'happy', 0.15, 'flat');
     }
   }
-  cancel() { const s = this.g.s; s.jaw = 0; s.nick = 0; this.pos = guideAt(this.segs, 0); }
+  cancel() { const s = this.g.s; s.jaw = this.base; s.nick = 0; this.pos = guideAt(this.segs, 0); }
   releaseTarget(i, p, result) {
     const { g } = this;
     if (result.verdict === 'perfect' || result.verdict === 'good') {
@@ -70,8 +73,8 @@ export class ChiselTool extends Tool {
     const { g } = this;
     ctx.save();
     applyHead(ctx, g.s);
-    drawGuide(ctx, this.segs, this.guideOpts(time));
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, 0, 168, time, true, g.hint ? 1 : this.nudge, 0.9);
+    if (this.guides) drawGuide(ctx, this.segs, this.guideOpts(time));
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, 0, 168, time, true, g.hint ? 1 : this.nudge, 0.9);
     // the jade roller: roller on the line, handle pointing away from the face
     const q = this.pos;
     let nx = q.ty, ny = -q.tx;

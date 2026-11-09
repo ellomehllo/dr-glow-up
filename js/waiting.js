@@ -9,7 +9,7 @@
 // ear), and the one called walks into the chair with it (callNext returns it). They are
 // drawn with the same drawPatient at 0.4 of the size, without the treatment chair,
 // clipped at the bench seat.
-import { makeState, tickPatient, drawPatient, react } from './patient.js';
+import { makeState, tickPatient, drawPatient, react, headY } from './patient.js';
 import { easeIO } from './draw.js';
 
 // room coordinates (backdrop.js): the doorway and the bench inside it
@@ -51,7 +51,36 @@ export class WaitingRoom {
   }
 
   // the queue as it stands (not the one already on the way to the chair)
-  get seated() { return this.list.filter((w) => !w.gone && !w.calling); }
+  get seated() { return this.list.filter((w) => !w.gone && !w.calling && !w.fled); }
+
+  // the waiter at room point p (their head and shoulders), or null
+  hitAt(p) {
+    for (const w of this.seated) {
+      const hy = SIT_Y + headY(w.s) * SCALE - w.lift * 70;
+      if (Math.abs(p.x - w.x) < 75 && p.y > hy - 110 && p.y < SEAT_Y + 10) return w; // head (hair too) down to the seat
+    }
+    return null;
+  }
+  // something done to them that doesn't hurt much: how they take it
+  //   happy (a cucumber to eat, a giggle), annoyed (paint, gel, paste, a poke, a tug),
+  //   wet (splashed), dazzled (a bright lamp), sneeze (powder)
+  poke(w, how) {
+    const s = w.s;
+    if (how === 'happy') { react(s, 'happy', 1.4, 'grin'); s.hopV = -260; s.mood = Math.min(1, s.mood + 0.3); }
+    else if (how === 'dazzled') { react(s, 'squeeze', 1.4, 'flat'); s.tiltV += 1.6; }
+    else if (how === 'sneeze') { react(s, 'squeeze', 0.6, 'o'); s.tiltV -= 2.6; s.sqV += 1.8; }
+    else if (how === 'wet') { react(s, 'normal', 1.4, 'flat'); s.sweat = 1; s.mood = Math.max(-1, s.mood - 0.2); }
+    else { react(s, 'wide', 1, 'grit'); s.tiltV += (Math.random() < 0.5 ? -1 : 1) * 1.8; s.mood = Math.max(-1, s.mood - 0.25); }
+  }
+  // a laser hit: they yelp, and run out the back; they won't be back this level
+  zap(w) {
+    react(w.s, 'squeeze', 2, 'wince');
+    w.s.eyeShut = [1.2, 1.2]; w.s.tears = [1, 1]; w.s.sweat = 1; w.s.mood = -1;
+    w.s.hopV = -420;
+    w.fled = true;
+    setTimeout(() => { w.tx = ENTER_X - 260; w.run = true; react(w.s, 'wide', 3, 'o'); }, 350);
+    this.react('eye');
+  }
 
   // something happened to the patient in the chair
   react(what) {
@@ -100,15 +129,21 @@ export class WaitingRoom {
   // patient); the rest move up; a new one walks in. n: the level the next patient plays
   callNext(n) {
     const ws = this.seated;
-    if (!ws.length) return null;
+    if (!ws.length) { // everyone ran off: a fresh bench walks in, and the game finds a patient itself
+      for (let i = 0; i < QUEUE; i++) { const nw = new Waiter(this.make(n + 1 + i, this.kinds()), ENTER_X - i * 160); nw.tx = SEATS[i]; nw.lift = 1; this.list.push(nw); }
+      return null;
+    }
     const [first, ...rest] = ws;
     first.tx = EXIT_X; first.calling = true;
     react(first.s, 'happy', 1.2, 'grin'); first.s.mood = 0.6;
     rest.forEach((w, i) => { w.tx = SEATS[i]; });
-    const nw = new Waiter(this.make(n + QUEUE, this.kinds()), ENTER_X);
-    nw.tx = SEATS[QUEUE - 1];
-    nw.lift = 1;
-    this.list.push(nw);
+    // new patients walk in to fill the bench back up (more if some ran off)
+    for (let i = rest.length; i < QUEUE; i++) {
+      const nw = new Waiter(this.make(n + 1 + i, this.kinds()), ENTER_X - (i - rest.length) * 160);
+      nw.tx = SEATS[i];
+      nw.lift = 1;
+      this.list.push(nw);
+    }
     return first.setup;
   }
 
@@ -118,10 +153,10 @@ export class WaitingRoom {
       if (moving) {
         // stand, then walk (a brisk bob), then sit back down when there
         w.lift = Math.min(1, w.lift + dt * 4);
-        if (w.lift > 0.6) { const v = Math.sign(d) * Math.min(Math.abs(d), dt * 560); w.x += v; w.walk += dt; }
+        if (w.lift > 0.6) { const v = Math.sign(d) * Math.min(Math.abs(d), dt * (w.run ? 1100 : 560)); w.x += v; w.walk += dt * (w.run ? 1.8 : 1); }
       } else {
         w.x = w.tx;
-        if (w.calling) w.gone = true;
+        if (w.calling || w.run) w.gone = true;
         w.lift = Math.max(0, w.lift - dt * 3.5);
       }
       // idle life: look around, at the doorway, at each other; now and then a sigh
@@ -146,9 +181,9 @@ export class WaitingRoom {
       const bob = w.lift > 0 ? Math.abs(Math.sin(w.walk * 9)) * -16 * w.lift : 0;
       const y = SIT_Y - easeIO(w.lift) * 70 + bob;
       ctx.save();
-      // inside the doorway only (walking in and out passes behind the frame); seated,
-      // cut at the bench seat; standing, a little lower
-      const bottom = SEAT_Y + 4 + w.lift * 120;
+      // inside the doorway only (walking in and out passes behind the frame), and always
+      // behind the bench: cut at its seat, standing or sitting, so no one shows below it
+      const bottom = SEAT_Y + 4;
       ctx.beginPath(); ctx.rect(DOOR.x, DOOR.y, DOOR.w, bottom - DOOR.y); ctx.clip();
       ctx.translate(w.x, y);
       ctx.scale(SCALE, SCALE);

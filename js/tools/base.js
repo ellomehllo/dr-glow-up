@@ -44,7 +44,20 @@ export class Tool {
     this.nudge = 0; // flashes the targets after a press that missed them
     this.begun = false; // set by the controller after the first enter()
     this.tScores = []; this.tVerdicts = []; // per target done so far
+    // a free use (the patient doesn't need it): it still works on whatever it touches
+    this.free = false;
+    this.base = 0; // where a one-value treatment starts from (free uses: the patient as they are)
   }
+  // ---------- free uses ----------
+  // One-value treatments (jaw, nose, posture, teeth) set `pushes`: used on a patient who
+  // doesn't need them they carry on from how the patient already is, and can overdo it.
+  startAt(v) { this.base = this.free ? v : 0; }
+  push(p) { const k = p / this.sw.c; return this.free ? this.base + 0.4 * k : k; }
+  value() { return 0; }
+  over() { return this.value() > 1.1; }
+  // a press on no target: what the tool does there anyway (true when it did something,
+  // instead of the miss or the hurt the controller would do)
+  freeSpot() { return false; }
 
   // ---------- targets ----------
   targets() { return [{ x: 0, y: 0, r: 200 }]; }
@@ -102,6 +115,9 @@ export class Tool {
   draw() {}
   exit() { this.alphaGoal = 0; this.alpha = 0; }
   reset() { this.p = 0; }
+  // in-world guides (rings, dotted paths, pointing hands) show only on a tool's first real
+  // use; after that, and on any free use, the tool is just a tool
+  get guides() { return !this.free && !this.g.known.has(this.def.id); }
   // true while the controller waits for a press on a target
   get waiting() { return !this.outro && this.cur < 0; }
   guideOpts(time) {

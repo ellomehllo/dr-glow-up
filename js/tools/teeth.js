@@ -34,11 +34,13 @@ export class TeethTool extends Tool {
     this.g.react('normal', 0.01, 'grin');
     s.lookAt = { x: 0, y: 160 };
   }
-  begin() { this.g.react('normal', 99, 'grin'); }
+  get pushes() { return true; }
+  value() { return this.g.s.teeth; }
+  begin() { this.startAt(this.g.s.teeth); this.g.react('normal', 99, 'grin'); }
   hold(dt, p) {
     super.hold(dt, p);
-    const { g } = this, s = g.s, sw = this.sw;
-    s.teeth = p / sw.c;
+    const { g } = this, s = g.s;
+    s.teeth = this.push(p);
     this.pos = guideAt(this.segs, this.tOf(p));
     g.audio.level('hum', 0.22);
     this.acc += dt;
@@ -53,7 +55,7 @@ export class TeethTool extends Tool {
     if (inZone && !this.wasIn) g.audio.tick();
     this.wasIn = inZone;
   }
-  cancel() { const s = this.g.s; s.teeth = 0; this.pos = guideAt(this.segs, 0); this.idle(); this.g.react('normal', 0.01, 'grin'); }
+  cancel() { const s = this.g.s; s.teeth = this.base; this.pos = guideAt(this.segs, 0); this.idle(); this.g.react('normal', 0.01, 'grin'); }
   idle() { this.g.audio.level('hum', 0); }
   releaseTarget(i, p, result) {
     const { g } = this;
@@ -87,8 +89,8 @@ export class TeethTool extends Tool {
     if (a < 0.01) return;
     ctx.save();
     applyHead(ctx, s);
-    drawGuide(ctx, this.segs, this.guideOpts(time));
-    if (this.cur < 0 && !this.outro && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, 0, 114, time, true, g.hint ? 1 : this.nudge, 0.9);
+    if (this.guides) drawGuide(ctx, this.segs, this.guideOpts(time));
+    if (this.cur < 0 && !this.outro && this.guides && (g.hint || this.nudge > 0.05)) drawTapHint(ctx, 0, 114, time, true, g.hint ? 1 : this.nudge, 0.9);
     const held = this.cur >= 0, q = this.pos;
     ctx.globalAlpha = a;
     const bob = held ? 0 : Math.sin(time * 4) * 4;

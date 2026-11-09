@@ -7,7 +7,7 @@ import { toneOf, LASH, OL } from './tones.js';
 import { CURLS, CAP, tuftKept, drawHair, drawBackHair } from './hair.js';
 import { drawBody, drawNeck, drawBehind } from './outfits.js';
 import { mix } from './people.js';
-import { hairNow, paintNow, drawPierced, drawGems } from './style.js';
+import { hairNow, paintNow, drawPierced, drawGems, drawShadow, drawMakeup, drawClips, drawShades } from './style.js';
 import { makeDent, drawDebris, drawWorms, drawOwn, drawTeeth, AAH, OWN_PIERCINGS } from './extras.js';
 
 export { INK, CURLS };
@@ -136,7 +136,8 @@ export function makeState(setup = DEFAULT_SETUP) {
     // cucumber tint a too-long press leaves
     circ: [st.circ0 || 0, st.circ0 || 0], circG: [0, 0],
     // sun spots the laser zaps (z: 0 there .. 1 gone) and the burn marks lingering leaves
-    spots: (st.spots || []).map((p) => ({ ...p, z: 0 })), burns: [],
+    spots: (st.spots || []).map((p) => ({ ...p, z: 0 })), burns: [], bald: [], // laser burns on the skin; bald patches burnt or plucked out of the hair
+    stains: [], hairFx: [], smears: [], // what other tools left (world.js): on the clothes, in the hair, on the face
     // teeth: 0 yellow, 1 white, past 1 glowing too bright
     teeth: st.teeth0 ?? 1,
     // wrinkles: how far the iron has run along each (0..1.25) and the red mark of an overdone one
@@ -148,7 +149,8 @@ export function makeState(setup = DEFAULT_SETUP) {
     worms: (st.worms || []).map((w) => ({ ...w, pull: 0, gone: false })),
     own: (st.own || (st.who && st.who.piercings ? OWN_PIERCINGS : [])).map((p) => ({ ...p, pull: 0, gone: false })),
     dent: makeDent(st.dent),
-    dye: null, lips: null, blush: null, pierced: [], gems: [], // style tools (style.js): colours in progress, piercings and gems added
+    dye: null, lips: null, blush: null, glitter: null, shadow: null, freckles: null, lashes: null, brows: null, highlight: null, // style tools (style.js): colours in progress
+    pierced: [], gems: [], clips: [], shades: null, // ...and piercings, gems and clips added, the sunglasses on
     // hurts (mood.js): marks left where a tool hurt the skin, and per eye: how red it is,
     // how long it stays squeezed shut, how much it is watering
     hurts: [], eyeRed: [0, 0], eyeShut: [0, 0], tears: [0, 0], pain: 0,
@@ -199,6 +201,7 @@ export function eyeSide(s, x, y) {
 
 // springs, blinks, timers. Runs every frame for the live patient.
 export function tickPatient(s, dt, time) {
+  for (const f of s.hairFx) f.t += dt;
   s.blinkT -= dt;
   if (s.blinkT <= 0) { s.blinking = 0.16; s.blinkT = 2.2 + Math.random() * 2.6; }
   if (s.blinking > 0) { s.blinking -= dt; s.blink = Math.sin(clamp01(1 - s.blinking / 0.16) * Math.PI); } else s.blink = 0;
@@ -219,7 +222,9 @@ export function tickPatient(s, dt, time) {
     if (s.hop >= 0) { if (s.hopV > 150) s.sqV -= s.hopV * 0.004; s.hop = 0; s.hopV = 0; }
   }
   for (let i = 0; i < s.curls.length; i++) if (s.curls[i] >= 0) s.curls[i] += dt;
-  for (const d of s.drips) if (d.len < d.max) d.len = Math.min(d.max, d.len + dt * d.v);
+  // gel runs down, then soaks in and fades
+  for (const d of s.drips) { if (d.len < d.max) d.len = Math.min(d.max, d.len + dt * d.v); d.t = (d.t || 0) + dt; }
+  if (s.drips.length && s.drips[0].t > DRIP_LIFE) s.drips = s.drips.filter((d) => d.t <= DRIP_LIFE);
   for (const t of s.strays) t.t += dt;
   if (s.sweat > 0) s.sweat = Math.max(0, s.sweat - dt * 0.7);
   if (s.flush > 0) s.flush = Math.max(0, s.flush - dt * 0.5);
@@ -319,7 +324,7 @@ function drawPimples(ctx, s, time) {
 }
 
 function drawEyes(ctx, s) {
-  const w = s.who, e = w.eyeSize || 1, T = toneOf(w.skin);
+  const w = s.who, e = w.eyeSize || 1, T = toneOf(w.skin), m = paintNow(s, 'lashes'), mas = m && m.a > 0.02 ? m : null;
   const hunter = clamp01((s.browL + s.browR) / 2);
   const sad = clamp01(-s.moodV) * (1 - hunter) * (1 - s.angerV);
   for (const side of [-1, 1]) {
@@ -427,6 +432,18 @@ function drawEyes(ctx, s) {
       ctx.beginPath(); ctx.arc(0, ry * 0.15, rx * 1.02, Math.PI * 0.22, Math.PI * 0.78); ctx.stroke();
       ctx.globalAlpha = 1;
     }
+    if (mas && s.blink < 0.5) { // mascara: a fan of lashes along the lid in its colour
+      ctx.globalAlpha = mas.a; ctx.lineWidth = 2.8; ctx.strokeStyle = mas.c;
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const t = 0.15 + k * 0.15, u = 1 - t, x = u * u * xi * 0.96 + 2 * u * t * 0 + t * t * xo, y = u * u * (yi + 1) + 2 * u * t * ((yi + yo) / 2 - 4) + t * t * yo;
+        const len = 7 + 7 * t, lean = side * (2 + 7 * t);
+        ctx.moveTo(x, y); ctx.quadraticCurveTo(x + lean * 0.3, y - len * 0.7, x + lean, y - len);
+      }
+      ctx.stroke();
+      ctx.lineWidth = 4.2; ctx.beginPath(); ctx.moveTo(xi * 0.96, yi + 1); ctx.quadraticCurveTo(0, (yi + yo) / 2 - 4, xo, yo); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     if (w.lashes && s.blink < 0.5) { // three lashes at the outer corner
       ctx.lineWidth = 2.6; ctx.strokeStyle = LASH;
       ctx.beginPath();
@@ -456,7 +473,7 @@ function browPath(ctx, x0, y0, cx, cy, x1, y1, wd) {
 }
 
 function drawBrows(ctx, s) {
-  const col = s.who.brow, kind = s.who.brows || 'normal';
+  const tint = paintNow(s, 'brows'), col = tint ? tint.c : s.who.brow, kind = s.who.brows || 'normal';
   const wk = { thin: 0.62, thick: 1.45, bushy: 1.6 }[kind] || 1, angry = kind === 'angry';
   ctx.lineCap = 'round'; ctx.strokeStyle = col;
   for (const side of [-1, 1]) {
@@ -909,12 +926,13 @@ function drawHead(ctx, s, time, dirtImg) {
   drawPimples(ctx, s, time);
   drawScars(ctx, s, time);
   drawCircles(ctx, s);
+  drawShadow(ctx, s);
   drawEyes(ctx, s);
   drawTears(ctx, s, time);
   drawBrows(ctx, s);
   if (s.angerV > 0.45) drawVein(ctx, s, time);
   drawNose(ctx, w.nose, s.nose, sk);
-  if (w.glasses) drawGlasses(ctx, w.glasses, w.eyeSize || 1);
+  if (w.glasses && !s.shades) drawGlasses(ctx, w.glasses, w.eyeSize || 1);
   drawOwn(ctx, s);
   if (s.worms.length) drawWorms(ctx, s, time);
   if (w.mole && !w.mustache) { ell(ctx, w.mole * 48, 104, 4.5, 4.5); ctx.fillStyle = '#4a2a24'; ctx.fill(); }
@@ -925,9 +943,15 @@ function drawHead(ctx, s, time, dirtImg) {
   const bl = paintNow(s, 'blush');
   if (bl && bl.a > 0.01) for (const side of [-1, 1]) { soft(ctx, side * 96, 70, 46, 28, bl.c, 0.8 * bl.a); soft(ctx, side * 92, 62, 18, 10, bl.hi, 0.5 * bl.a); }
   if (w.cheeks) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; for (const side of [-1, 1]) { ell(ctx, side * 90 - 6, 56, 9, 5, -0.3); ctx.fill(); } }
-  drawHair(ctx, s);
+  drawMakeup(ctx, s, time);
+  if (s.smears.length) drawSmears(ctx, s);
+  drawShades(ctx, s.shades, EYE.x, EYE.y, w.eyeSize || 1);
+  ctx.save(); clipBald(ctx, s); drawHair(ctx, s); ctx.restore();
+  if (s.bald.length) drawBald(ctx, s);
+  if (s.hairFx.length) drawHairFx(ctx, s, time);
   drawPierced(ctx, s);
   drawGems(ctx, s);
+  drawClips(ctx, s);
   if (s.debris.length) drawDebris(ctx, s, time);
   if (dirtImg && s.dirtAlpha > 0) {
     ctx.globalAlpha = s.dirtAlpha;
@@ -949,14 +973,18 @@ function drawHead(ctx, s, time, dirtImg) {
     }
     ctx.restore();
   }
-  // gel drips from overfilled scars
+  // gel drips from overfilled scars: one soft teardrop each (a thin run into a round
+  // bead), fading as it soaks in
   for (const d of s.drips) {
-    ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x, d.y + d.len);
-    ctx.strokeStyle = INK; ctx.lineWidth = d.w + 4.5; ctx.stroke();
-    ctx.strokeStyle = COL.gel; ctx.lineWidth = d.w; ctx.stroke();
-    ell(ctx, d.x, d.y + d.len, d.w * 0.85, d.w * 0.95); ctx.fillStyle = COL.gel; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = INK; ctx.stroke();
-    ell(ctx, d.x - d.w * 0.25, d.y + d.len - d.w * 0.3, d.w * 0.25, d.w * 0.25); ctx.fillStyle = COL.gelHi; ctx.fill();
+    const a = Math.min(1, (DRIP_LIFE - d.t) / 0.8), w = d.w, y1 = d.y + d.len;
+    if (a <= 0) continue;
+    const drop = new Path2D(`M ${d.x - w * 0.35} ${d.y} L ${d.x + w * 0.35} ${d.y} C ${d.x + w * 0.4} ${y1 - w * 2} ${d.x + w * 1.05} ${y1 - w * 0.6} ${d.x + w * 1.05} ${y1}`
+      + ` A ${w * 1.05} ${w * 1.05} 0 0 1 ${d.x - w * 1.05} ${y1} C ${d.x - w * 1.05} ${y1 - w * 0.6} ${d.x - w * 0.4} ${y1 - w * 2} ${d.x - w * 0.35} ${d.y} Z`);
+    ctx.globalAlpha = a * 0.92;
+    ctx.fillStyle = COL.gel; ctx.fill(drop);
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(31,150,120,0.75)'; ctx.stroke(drop);
+    ell(ctx, d.x - w * 0.35, y1 - w * 0.25, w * 0.3, w * 0.38); ctx.fillStyle = COL.gelHi; ctx.fill();
+    ctx.globalAlpha = 1;
   }
   if (s.sweat > 0.02) {
     const y = -92 + (1 - s.sweat) * 46;
@@ -967,6 +995,95 @@ function drawHead(ctx, s, time, dirtImg) {
   }
 }
 
+// in the hair (world.js): soap foam, gel, powder, toothpaste, a cucumber slice, a tangle,
+// a lump from the mallet, a straightened shine
+function drawHairFx(ctx, s, time) {
+  for (const f of s.hairFx) {
+    const { x, y } = f;
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    switch (f.kind) {
+      case 'foam':
+        for (const [dx, dy, r] of [[-10, 2, 11], [6, -6, 13], [16, 6, 9], [-2, 10, 8]]) { ell(ctx, x + dx, y + dy, r, r); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(58,39,71,0.35)'; ctx.stroke(); }
+        break;
+      case 'gel': ell(ctx, x, y, 16, 11, f.rot); ctx.fillStyle = 'rgba(63,224,181,0.6)'; ctx.fill(); ell(ctx, x - 5, y - 4, 5, 3); ctx.fillStyle = '#ffffff'; ctx.fill(); break;
+      case 'powder': soft(ctx, x, y, 22, 16, '#ffffff', 0.85); break;
+      case 'paste': ell(ctx, x, y, 14, 7, f.rot); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.strokeStyle = '#6fd3c0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.stroke(); break;
+      case 'slice':
+        ctx.translate(x, y); ctx.rotate(f.rot);
+        ell(ctx, 0, 0, 20, 20); ctx.fillStyle = '#3f9a4a'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+        ell(ctx, 0, 0, 16, 16); ctx.fillStyle = '#c4ef94'; ctx.fill();
+        break;
+      case 'tangle':
+        ctx.strokeStyle = s.who.hair; ctx.lineWidth = 4;
+        ctx.beginPath(); for (let k = 0; k < 4; k++) ctx.ellipse(x + (k % 2) * 6 - 3, y + (k > 1 ? 5 : -5), 14, 8, f.rot + k, 0, TAU); ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1.5; ctx.stroke();
+        break;
+      case 'lump': {
+        const k = Math.min(1, f.t * 4) * (1 + 0.05 * Math.sin(time * 6));
+        ell(ctx, x, y, 22 * k, 16 * k); ctx.fillStyle = mix(s.who.skin.base, '#ff7d9a', 0.35); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+        ell(ctx, x - 6, y - 6, 6 * k, 3.5 * k); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill();
+        break;
+      }
+      case 'shine': ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x - 18, y - 6); ctx.quadraticCurveTo(x, y + 4, x + 18, y - 6); ctx.stroke(); break;
+    }
+    ctx.restore();
+  }
+}
+// on the face (world.js): toothpaste, gel and paint smears
+function drawSmears(ctx, s) {
+  for (const m of s.smears) {
+    ell(ctx, m.x, m.y, m.r, m.r * 0.65, m.rot);
+    ctx.fillStyle = m.col; ctx.fill();
+    if (m.kind === 'paste') { ctx.strokeStyle = '#6fd3c0'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(m.x - m.r * 0.6, m.y); ctx.lineTo(m.x + m.r * 0.6, m.y); ctx.stroke(); }
+  }
+}
+// bald patches: the hair is cut away there (clipBald), the scalp shows through. A laser
+// patch is scorched (a dark frizzy rim, a red burn); a plucked one is pink and bumpy.
+export function addBald(s, x, y, r, kind) {
+  const near = s.bald.find((b) => b.kind === kind && Math.hypot(b.x - x, b.y - y) < b.r + 6);
+  if (near) { near.r = Math.min(kind === 'burn' ? 46 : 36, near.r + (kind === 'burn' ? 6 : 3)); return near; }
+  if (s.bald.length >= 16) return null;
+  const b = { x, y, r, kind, rot: Math.random() * TAU };
+  s.bald.push(b);
+  return b;
+}
+function clipBald(ctx, s) {
+  for (const b of s.bald) {
+    const p = new Path2D(); p.rect(-2000, -2000, 4000, 4000); p.ellipse(b.x, b.y, b.r, b.r * 0.9, b.rot, 0, TAU);
+    ctx.clip(p, 'evenodd');
+  }
+}
+function drawBald(ctx, s) {
+  const hair = s.who.hair;
+  for (const b of s.bald) {
+    ctx.save();
+    const p = new Path2D(); p.ellipse(b.x, b.y, b.r, b.r * 0.9, b.rot, 0, TAU);
+    ctx.save(); ctx.clip(p);
+    if (b.kind === 'burn') soft(ctx, b.x, b.y, b.r * 0.8, b.r * 0.7, '#e2453f', 0.45);
+    else soft(ctx, b.x, b.y, b.r * 0.9, b.r * 0.8, '#ff7d9a', 0.3);
+    // stubble (or, plucked, little red bumps)
+    ctx.fillStyle = b.kind === 'burn' ? 'rgba(40,24,20,0.55)' : 'rgba(230,80,100,0.5)';
+    for (let k = 0; k < 9; k++) {
+      const a = b.rot + k * 2.4, d = b.r * 0.25 + (k % 3) * b.r * 0.22;
+      ell(ctx, b.x + Math.cos(a) * d, b.y + Math.sin(a) * d, 1.6, 1.6); ctx.fill();
+    }
+    ctx.restore();
+    // the cut edge of the hair: scorched frizz, or a fine line of the hair colour
+    ctx.lineCap = 'round';
+    if (b.kind === 'burn') {
+      ctx.strokeStyle = 'rgba(40,24,20,0.8)'; ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      for (let k = 0; k < 12; k++) {
+        const a = b.rot + (k / 12) * TAU, x = b.x + Math.cos(a) * b.r, y = b.y + Math.sin(a) * b.r * 0.9;
+        ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a + 0.6) * 6, y + Math.sin(a + 0.6) * 6, x + Math.cos(a) * 9, y + Math.sin(a) * 9);
+      }
+      ctx.stroke();
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(40,24,20,0.45)'; ctx.stroke(p);
+    } else { ctx.lineWidth = 2; ctx.strokeStyle = rgba(hair, 0.6); ctx.stroke(p); }
+    ctx.restore();
+  }
+}
+const DRIP_LIFE = 3.2; // seconds a gel drip shows before it has soaked in
 export const DIRT_BOX = { x: -200, y: -250, w: 400, h: 500 };
 
 // a dyed patient is drawn with the dye's colour in place of their own (the look object is
@@ -992,7 +1109,7 @@ function drawPatientNow(ctx, s, time, dirtImg) {
     if (s.sq) { ctx.translate(0, 190); ctx.scale(1 - s.sq * 0.6, 1 + s.sq); ctx.translate(0, -190); }
   };
   ctx.save(); ctx.translate(0, s.hop); drawBehind(ctx, s); ctx.restore();
-  ctx.save(); headXf(); drawBackHair(ctx, s); ctx.restore();
+  ctx.save(); headXf(); clipBald(ctx, s); drawBackHair(ctx, s); ctx.restore();
   // the neck goes in first so the clothes cover its base and the neckline frames it
   const chin = jawSegs(s.jaw)[3][5];
   drawNeck(ctx, s, headY(s), chin);
