@@ -4,7 +4,7 @@
 // Nothing starts until the first user gesture calls init(); with ?debug (automated
 // checks) init is a no-op and nothing plays.
 const SFX = ['pop', 'splat', 'boing', 'tink', 'nick', 'shing', 'sparkle', 'lock', 'zap', 'knock', 'oink', 'drip',
-  'tick', 'stamp', 'success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud', 'flash'];
+  'tick', 'stamp', 'success', 'perfect', 'fail', 'cheer', 'thud', 'flash']; // fanfare is synth bells now
 const PITCHED = new Set(['pop', 'boing', 'tink', 'zap', 'knock']); // first argument is a pitch
 // recorded clips are mastered loud; these keep them under the music and the voices
 const SFX_VOL = { pop: 0.26, splat: 0.28, boing: 0.18, tink: 0.14, nick: 0.24, shing: 0.13, sparkle: 0.15, lock: 0.24, zap: 0.16,
@@ -467,11 +467,20 @@ export class Sound {
     this._tone(330, t, 0.26, 0.13, 'triangle', 300, 0.2);
     this._tone(262, t + 0.28, 0.5, 0.13, 'triangle', 220, 0.25);
   }
+  // a good job: soft rising bells (C E G C) with a warm chord under them, no brass
   fanfare() {
-    if (!this.ctx) return; const t = this._t;
-    [784, 1046.5, 1318.5, 1568].forEach((f, i) => this._tone(f, t + i * 0.11, 0.25, 0.07, 'square', null, 0.3));
-    [523.25, 659.25, 783.99, 1046.5].forEach((f) => this._tone(f, t + 0.5, 1.0, 0.045, 'triangle', null, 0.5));
+    if (!this.ctx) return; const ctx = this.ctx, t = this._t;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; lp.Q.value = 0.3;
+    const bus = ctx.createGain(); bus.gain.value = 0.2; bus.connect(lp); this._out(lp, 0.3);
+    const note = (f, at, vol, len) => {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.025); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      o.connect(g).connect(bus); o.start(at); o.stop(at + len + 0.05);
+    };
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => note(f, t + i * 0.14, 0.22, 1.2));
+    [261.63, 329.63, 392.0].forEach((f) => note(f, t + 0.42, 0.08, 1.6));
   }
+
   cheer() {
     if (!this.ctx) return; const t = this._t;
     for (let i = 0; i < 10; i++) this._tone(1800 + Math.random() * 2400, t + i * 0.07, 0.25, 0.03, 'sine', null, 0.5);
