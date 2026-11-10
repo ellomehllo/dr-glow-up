@@ -1081,6 +1081,9 @@ export class Game {
   // a tool where there is nothing to treat hurts (head-space x, y): it leaves a mark (kind:
   // burn, bruise, rash) and costs aura; in an eye it squeezes shut, waters, stays red, and
   // costs much more. `free`: the treatment scores the mark itself (the laser's burns).
+  // what a hurt patient shouts, by how much they've been hurt this visit:
+  // ouch at first, then "that hurts / careful", then "what are you doing / are you crazy / let me go"
+  ouch(s) { return s.pain < 4 ? 'hurt' : s.pain < 9 ? 'sore' : 'angry'; }
   hurtAt(x, y, kind, free = false) {
     const s = this.s, who = s.who, side = eyeSide(s, x, y), at = headToStage(s, x, y), t = this.g.time;
     if (side >= 0) {
@@ -1092,7 +1095,7 @@ export class Game {
       s.pain += 2.5;
       s.mood = Math.max(-1, s.mood - 0.5);
       react(s, 'squeeze', 1.2, 'wince');
-      this.audio.say(s, 'hurt');
+      this.audio.say(s, this.ouch(s));
       s.tiltV += (side ? 1 : -1) * 3.2; s.sqV += 1.4;
       this.fx.drops(at.x, at.y, 7, '#9fe2ff');
       this.fx.ring(at.x, at.y, 6, 54, 0.4, '#ff4d6d', 6);
@@ -1103,7 +1106,7 @@ export class Game {
       s.pain += 1;
       s.mood = Math.max(-1, s.mood - 0.25);
       react(s, 'squeeze', 0.7, 'wince');
-      this.audio.say(s, 'hurt');
+      this.audio.say(s, this.ouch(s));
       s.tiltV += (x < 0 ? -1 : 1) * 1.6;
       this.fx.ring(at.x, at.y, 5, 34, 0.35, '#ff7d9a', 5);
       if (kind === 'burn') this.fx.puff(at.x, at.y, 3, '190,180,200');

@@ -18,7 +18,7 @@ button:hover{border-color:var(--pink)}button.on{background:var(--pink);color:#ff
 <div class="wrap"><table id="t"></table></div>
 <script>
 const V={m1:'Man 1 (Roger)',m2:'Man 2 (Chris)',m3:'Man 3 (Eric)',f1:'Woman 1 (Courtney)',f2:'Woman 2 (Trinity)',f3:'Woman 3 (Campbell)'};
-const W=['ouch','ow','stop','wait','hey','yes','better','ahh','wow','perfect','aha','mmhmm','nice','hmm','meh'];
+const W=['ouch','ow','stop','wait','hey','yes','better','ahh','wow','perfect','aha','mmhmm','nice','hmm','meh','hurts','careful','what','crazy','letgo'];
 const t=document.getElementById('t');
 t.innerHTML='<tr><th>Voice</th>'+W.map(w=>`<th>${w}</th>`).join('')+'</tr>'+Object.entries(V).map(([k,n])=>`<tr><td>${n}</td>`+W.map(w=>`<td><button data-s="${k}-${w}">${w}</button></td>`).join('')+'</tr>').join('');
 let a=null;

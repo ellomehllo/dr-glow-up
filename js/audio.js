@@ -17,9 +17,10 @@ const VOICES = { m: ['m1', 'm2', 'm3'], f: ['f1', 'f2', 'f3'] };
 const FEMALE = new Set(['goth', 'punk', 'glam', 'foodie']), MALE = new Set(['bodybuilder', 'bookworm', 'brainiac', 'bully', 'gamer', 'grandpa']);
 // what a character says, by moment: hurt, did something they didn't ask for, and how the session turned out
 // good / great: a treatment that went well, during the session
-const LINES = { hurt: ['ouch', 'ow', 'stop'], wait: ['wait', 'hey'], good: ['yes', 'better', 'ahh'], great: ['wow', 'perfect'],
+// hurt -> sore -> angry as the same patient keeps getting hurt (see Game.ouch)
+const LINES = { hurt: ['ouch', 'ow', 'stop'], sore: ['hurts', 'careful', 'stop'], angry: ['what', 'crazy', 'letgo'], wait: ['wait', 'hey'], good: ['yes', 'better', 'ahh'], great: ['wow', 'perfect'],
   happy: ['aha', 'mmhmm', 'nice'], mid: ['hmm', 'meh'] };
-const COOL = { hurt: 1.4, wait: 4, good: 2, great: 2, happy: 0, mid: 0 };
+const COOL = { hurt: 1.4, sore: 1.6, angry: 1.8, wait: 4, good: 2, great: 2, happy: 0, mid: 0 };
 function voiceOf(who) {
   const seed = (who && who.seed) || 0, k = who && who.kind;
   const g = FEMALE.has(k) ? 'f' : MALE.has(k) ? 'm' : (seed >> 3) % 2 ? 'f' : 'm';
@@ -169,10 +170,14 @@ export class Sound {
   }
   _buildLoops() {
     const ctx = this.ctx;
+    // the tool loops (scrub, laser, polish, hum...) share a soft bus: quieter, no harsh top end
+    const soft = ctx.createGain(); soft.gain.value = 0.6;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.4;
+    soft.connect(lp); this._out(lp, 0.12);
     const mk = (name, chain, verb = 0.1) => {
       const g = ctx.createGain(); g.gain.value = 0;
       chain(g);
-      this._out(g, verb);
+      g.connect(soft);
       this.loops[name] = g;
     };
     // scrub: soft soapy hiss (bubble blips come from grains)
@@ -266,51 +271,65 @@ export class Sound {
     if (!this.ctx || this.musicOn) return;
     this.musicOn = true;
     this.mNext = this.ctx.currentTime + 0.15; this.mStep = 0;
-    this.music.gain.setTargetAtTime(0.55, this.ctx.currentTime, 1.2);
+    this.music.gain.setTargetAtTime(0.32, this.ctx.currentTime, 2);
   }
+  // a slow, soft lullaby: rounded bell notes over a warm pad and a quiet bass, through a
+  // low-pass so nothing is bright or clinky. 4 bars of 16 steps at 76 bpm.
   _musicTick() {
-    const ctx = this.ctx, sp = 60 / 112 / 4;
-    while (this.mNext < ctx.currentTime + 0.25) {
-      this._mStep(this.mStep, this.mNext);
+    const ctx = this.ctx, sp = 60 / 76 / 4;
+    if (!this.mBus) {
+      this.mBus = ctx.createGain(); this.mBus.gain.value = 1;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.4;
+      this.mBus.connect(lp).connect(this.music);
+    }
+    while (this.mNext < ctx.currentTime + 0.3) {
+      this._mStep(this.mStep, this.mNext, sp);
       this.mNext += sp; this.mStep = (this.mStep + 1) % 64;
     }
   }
-  _mStep(i, t) {
+  _mStep(i, t, sp) {
     const bar = i >> 4, st = i & 15;
-    const roots = [130.81, 98.0, 110.0, 87.31];
-    const P = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51];
+    // C - Am - F - G, gentle and resolving
+    const roots = [130.81, 110.0, 87.31, 98.0];
+    const PADS = [[261.63, 329.63, 392.0], [220.0, 261.63, 329.63], [174.61, 220.0, 261.63], [196.0, 246.94, 293.66]];
+    const P = [392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
     const MEL = [
-      [0, -1, 2, -1, 3, -1, 2, -1, 5, -1, 3, -1, 2, -1, 3, -1],
-      [3, -1, 1, -1, 3, -1, 6, -1, 5, -1, -1, 3, 1, -1, -1, -1],
-      [4, -1, 2, -1, 0, -1, 2, -1, 4, -1, 5, -1, 4, -1, 2, -1],
-      [4, -1, 5, -1, 4, -1, 2, -1, 0, -1, 2, -1, 3, -1, -1, -1],
+      [2, -1, -1, -1, 4, -1, -1, 3, 2, -1, -1, -1, 0, -1, -1, -1],
+      [1, -1, -1, -1, 2, -1, -1, 4, 3, -1, -1, -1, -1, -1, -1, -1],
+      [0, -1, -1, -1, 2, -1, -1, 3, 4, -1, -1, 5, 4, -1, -1, -1],
+      [3, -1, -1, -1, 1, -1, -1, 2, 3, -1, -1, -1, -1, -1, -1, -1],
     ];
     const n = MEL[bar][st];
-    if (n >= 0) this._mallet(P[n], t, 0.05);
-    if (st === 0 || st === 8) this._bass(roots[bar], t);
-    if (st === 12) this._bass(roots[bar] * 1.5, t);
-    if (st % 4 === 2) this._hat(t);
+    if (n >= 0) this._bell(P[n], t, 0.045);
+    if (st === 0) { this._pad(PADS[bar], t, sp * 16); this._bass(roots[bar], t, sp * 8); }
+    if (st === 8) this._bass(roots[bar] * 1.5, t, sp * 7);
   }
-  _mallet(f, t, vol) {
+  // music-box bell: sine with a soft attack and a long, gentle tail (no metallic overtones)
+  _bell(f, t, vol) {
     const ctx = this.ctx;
-    const o = ctx.createOscillator(); o.frequency.value = f;
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
-    const o2 = ctx.createOscillator(); o2.frequency.value = f * 4;
-    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.0001, t); g2.gain.exponentialRampToValueAtTime(vol * 0.25, t + 0.003); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
-    o.connect(g).connect(this.music); o2.connect(g2).connect(this.music);
-    o.start(t); o.stop(t + 0.42); o2.start(t); o2.stop(t + 0.1);
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * 2;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.0001, t); g2.gain.exponentialRampToValueAtTime(vol * 0.12, t + 0.02); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    o.connect(g).connect(this.mBus); o2.connect(g2).connect(this.mBus);
+    o.start(t); o.stop(t + 1.5); o2.start(t); o2.stop(t + 0.6);
   }
-  _bass(f, t) {
+  // warm pad chord that swells in and fades over the bar
+  _pad(chord, t, dur) {
     const ctx = this.ctx;
-    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
-    o.connect(g).connect(this.music); o.start(t); o.stop(t + 0.38);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.016, t + dur * 0.35); g.gain.linearRampToValueAtTime(0.0001, t + dur * 1.05);
+    g.connect(this.mBus);
+    for (const f of chord) for (const d of [-5, 5]) {
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = d;
+      o.connect(g); o.start(t); o.stop(t + dur * 1.1);
+    }
   }
-  _hat(t) {
+  _bass(f, t, dur = 0.8) {
     const ctx = this.ctx;
-    const n = this._noise(false); const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000;
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.025, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-    n.connect(f).connect(g).connect(this.music); n.start(t, Math.random(), 0.06);
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(this.mBus); o.start(t); o.stop(t + dur + 0.05);
   }
 
   update(dt) {

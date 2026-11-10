@@ -28,7 +28,7 @@ for line in open(os.path.join(src, 'takes.tsv')):
     if len(s) == len(WORDS): segs = s; break
   if not segs: print(name, 'could not split cleanly:', len(s), 'pieces'); continue
   for w, (a, b) in zip(WORDS, segs):
-    a = max(0, a - 0.03); b = min(b + 0.06, a + 1.0)
+    a = max(0, a - 0.03); b = min(b + 0.06, a + float(os.environ.get("MAXLEN", "1.0")))
     o = os.path.join(out, f'{name}-{w}.mp3')
     ff('-y', '-i', f, '-ss', f'{a:.3f}', '-to', f'{b:.3f}', '-af', 'afade=t=in:d=0.01,areverse,afade=t=in:d=0.05,areverse,loudnorm=I=-18:TP=-2', '-ac', '1', '-ar', '44100', '-b:a', '64k', o)
   print(name, 'ok', ' '.join(f'{w}:{b-a:.2f}' for w, (a, b) in zip(WORDS, segs)))
