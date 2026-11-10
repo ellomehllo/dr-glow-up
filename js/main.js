@@ -14,7 +14,7 @@ import { Backdrop } from './backdrop.js';
 import { FX } from './fx.js';
 import { Dirt } from './dirt.js';
 import { VIEWS } from './config.js';
-import { headToStage, onReact } from './patient.js';
+import { headToStage } from './patient.js';
 
 const T0 = performance.now();
 const canvas = document.getElementById('stage');
@@ -23,16 +23,6 @@ const audio = new Sound();
 // automated checks (?debug) never open an AudioContext unless &sound is given
 const qs = new URLSearchParams(location.search);
 if (qs.has('debug') && !qs.has('sound')) { audio.init = () => {}; audio.muted = true; }
-// characters say ouch / laugh / gasp with their own voice; a quick 'normal' reset
-// (a new patient sitting down) loads that character's lines ahead of time
-const LINE = { squeeze: 'ouch', wide: 'gasp' };
-onReact.fn = (s, expr, dur) => {
-  const kind = s.who && s.who.kind;
-  if (!kind) return;
-  if (dur < 0.3) { audio.prepVoice(kind); return; }
-  const line = LINE[expr] || (expr === 'happy' && dur >= 0.9 ? 'happy' : null);
-  if (line) audio.voice(kind, line, s);
-};
 const playables = new Playables();
 const cloud = new Cloud();
 const input = new HoldInput(document.body);

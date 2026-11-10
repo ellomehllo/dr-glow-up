@@ -373,6 +373,7 @@ export class Game {
     // the patient's wish (not yet scored) is in their order; anything else is a free play
     const i = this.defs.findIndex((d, k) => d.id === id && !this.used.has(k));
     const wish = i >= 0 ? this.defs[i].wish : null;
+    if (!wish) this.audio.say(this.s, 'wait'); // not something they asked for
     this.style = { def, i, down: false, last: null, rub: 0 };
     const s = this.s, colour = !!PALETTES[id];
     if (colour && !(s[id] && s[id].id === this.swatch[id])) setPaint(s, id, this.swatch[id]);
@@ -624,6 +625,7 @@ export class Game {
       this.fx.glitter(c.x, c.y + 120, 12, 300);
     });
     this.audio.whoosh(0.07);
+    this.audio.prepVoice(this.s.who);
     this.sayWish(1.1);
     this.setMode('arrive');
     this.retryMs = performance.now() - t0;
@@ -926,6 +928,7 @@ export class Game {
   beginTool(i, spare = null) {
     const tool = spare || this.tools[i], def = tool.def;
     this.spare = !!spare;
+    if (spare) this.audio.say(this.s, 'wait'); // not something they asked for
     this.ui.closeKit();
     // a glow carries on from what it had; everything else starts each target from zero
     this.idx = i; this.tool = tool; this.p = def.multiHold ? tool.p : 0; this.sweet = null;
@@ -1089,6 +1092,7 @@ export class Game {
       s.pain += 2.5;
       s.mood = Math.max(-1, s.mood - 0.5);
       react(s, 'squeeze', 1.2, 'wince');
+      this.audio.say(s, 'hurt');
       s.tiltV += (side ? 1 : -1) * 3.2; s.sqV += 1.4;
       this.fx.drops(at.x, at.y, 7, '#9fe2ff');
       this.fx.ring(at.x, at.y, 6, 54, 0.4, '#ff4d6d', 6);
@@ -1099,6 +1103,7 @@ export class Game {
       s.pain += 1;
       s.mood = Math.max(-1, s.mood - 0.25);
       react(s, 'squeeze', 0.7, 'wince');
+      this.audio.say(s, 'hurt');
       s.tiltV += (x < 0 ? -1 : 1) * 1.6;
       this.fx.ring(at.x, at.y, 5, 34, 0.35, '#ff7d9a', 5);
       if (kind === 'burn') this.fx.puff(at.x, at.y, 3, '190,180,200');
@@ -1352,6 +1357,8 @@ export class Game {
     });
     const feel = this.feel;
     this.after(0.7, () => this.waiting.react(feel));
+    // how it turned out, in a word: happy ones cheer it, mid or worse ones shrug it off
+    this.after(0.45, () => this.audio.say(s, feel === 'thrilled' || feel === 'pleased' ? 'happy' : 'mid'));
     if (bad) { this.audio.fail(); this.director.shake(this.feel === 'furious' ? 0.5 : 0.25); }
     else if (this.feel === 'meh') { s.sqV += 1.2; this.audio.boing(0.8); } // a shrug
     else {

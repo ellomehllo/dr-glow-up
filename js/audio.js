@@ -12,7 +12,17 @@ const SFX_VOL = { pop: 0.45, splat: 0.5, boing: 0.35, tink: 0.3, nick: 0.45, shi
   cheer: 0.35, thud: 0.5, flash: 0.35 };
 // big moments: while one rings, another of these is skipped instead of piling on
 const STINGER = new Set(['success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud', 'flash', 'stamp']);
-const VOICES = ['goth', 'bodybuilder', 'bookworm', 'brainiac', 'foodie', 'punk', 'bully', 'gamer', 'glam', 'grandpa', 'regular'];
+// six adult voices (3 men, 3 women), each saying a handful of short words
+const VOICES = { m: ['m1', 'm2', 'm3'], f: ['f1', 'f2', 'f3'] };
+const FEMALE = new Set(['goth', 'punk', 'glam', 'foodie']), MALE = new Set(['bodybuilder', 'bookworm', 'brainiac', 'bully', 'gamer', 'grandpa']);
+// what a character says, by moment: hurt, did something they didn't ask for, and how the session turned out
+const LINES = { hurt: ['ouch', 'ow', 'stop'], wait: ['wait', 'hey'], happy: ['aha', 'mmhmm', 'nice'], mid: ['hmm', 'meh'] };
+const COOL = { hurt: 1.4, wait: 4, happy: 0, mid: 0 };
+function voiceOf(who) {
+  const seed = (who && who.seed) || 0, k = who && who.kind;
+  const g = FEMALE.has(k) ? 'f' : MALE.has(k) ? 'm' : (seed >> 3) % 2 ? 'f' : 'm';
+  return VOICES[g][seed % 3];
+}
 const base = new URL('../sounds/', import.meta.url);
 // loudness of a clip, ENV_RATE steps a second, 0..1 (drives the talking mouth)
 const ENV_RATE = 30;
@@ -62,38 +72,37 @@ export class Sound {
     src.connect(g).connect(this.sfxBus); src.start(t);
     return true;
   }
-  // a character's line: 'ouch' | 'happy' | 'gasp'. One voice at a time, with a breather
-  // between; 'ouch' at most every few seconds. who (the patient state) gets s.talk, the
-  // loudness of the line right now, so the mouth moves with the words.
-  voice(kind, line, who = null) {
-    if (!this.ctx || this.muted) return;
-    if (!VOICES.includes(kind)) kind = 'regular';
-    const key = `${kind}-${line}`, t = this.ctx.currentTime;
-    if (t < this.voiceUntil || t < (this.lineAt[line] || 0)) return;
+  // a character speaks: what = 'hurt' | 'wait' | 'happy' | 'mid'. One short word, one
+  // voice at a time; s (the patient state) gets s.talk so the mouth moves with the word.
+  say(s, what) {
+    if (!this.ctx || this.muted || !LINES[what]) return;
+    const t = this.ctx.currentTime;
+    if (t < this.voiceUntil || t < (this.lineAt[what] || 0)) return;
+    const v = voiceOf(s && s.who), opts = LINES[what], word = opts[(Math.random() * opts.length) | 0], key = `${v}-${word}`;
     const b = this.vbuf[key];
-    if (!b) { this._loadVoice(key); return; }
-    this.voiceUntil = t + b.duration + 1.2;
-    this.lineAt[line] = t + (line === 'ouch' ? 6 : line === 'happy' ? 4 : 3);
-    const src = this.ctx.createBufferSource(); src.buffer = b;
-    src.playbackRate.value = 0.94; // a touch lower: several of the voices sit high
-    const g = this.ctx.createGain(); g.gain.value = 0.75;
-    src.connect(g); this._out(g, 0.04); src.start(t);
-    // effects step back while someone talks
+    if (!b) { this.prepVoice(s && s.who); return; }
+    const rate = s && s.who && s.who.kind === 'grandpa' ? 0.92 : 1;
+    this.voiceUntil = t + b.duration / rate + 0.25;
+    this.lineAt[what] = t + COOL[what];
+    const src = this.ctx.createBufferSource(); src.buffer = b; src.playbackRate.value = rate;
+    const g = this.ctx.createGain(); g.gain.value = 0.85;
+    src.connect(g); this._out(g, 0.03); src.start(t);
     this.sfxBus.gain.cancelScheduledValues(t);
-    this.sfxBus.gain.setTargetAtTime(0.45, t, 0.03);
-    this.sfxBus.gain.setTargetAtTime(1, t + b.duration / 0.94, 0.15);
+    this.sfxBus.gain.setTargetAtTime(0.5, t, 0.02);
+    this.sfxBus.gain.setTargetAtTime(1, t + b.duration / rate, 0.1);
     if (this.talk && this.talk.who) this.talk.who.talk = 0;
-    this.talk = who ? { who, env: this.venv[key], t0: t, rate: 0.94 } : null;
+    this.talk = s ? { who: s, env: this.venv[key], t0: t, rate } : null;
   }
   _loadVoice(key) {
     if (this.vbuf[key] !== undefined) return;
     this.vbuf[key] = null;
     this._load(new URL(`voice/${key}.mp3`, base)).then((x) => { this.vbuf[key] = x; this.venv[key] = envelope(x); }, () => {});
   }
-  // load one character's lines ahead of time (when they sit down)
-  prepVoice(kind) {
+  // load the patient's voice ahead of time (when they sit down)
+  prepVoice(who) {
     if (!this.ctx) return;
-    for (const l of ['ouch', 'happy', 'gasp']) this._loadVoice(`${VOICES.includes(kind) ? kind : 'regular'}-${l}`);
+    const v = voiceOf(who);
+    for (const w of Object.values(LINES).flat()) this._loadVoice(`${v}-${w}`);
   }
   get ready() { return !!this.ctx; }
   init() {

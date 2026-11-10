@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice check</title>
+<style>
+:root{--bg:#fbf7f4;--ink:#3a2747;--card:#fff;--line:#eadfe6;--pink:#ff7d9a}
+@media (prefers-color-scheme:dark){:root{--bg:#1d1724;--ink:#f3eaf5;--card:#2a2233;--line:#3d3248}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,sans-serif;padding:16px}
+h1{font-size:20px;margin:0 0 4px}p{margin:0 0 16px;opacity:.75}
+table{border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden;width:100%;max-width:900px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}
+button{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:5px 9px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--pink)}button.on{background:var(--pink);color:#fff;border-color:var(--pink)}
+.wrap{overflow-x:auto}
+</style></head><body>
+<h1>Patient voices</h1>
+<p>Click a word to hear it. Rows are the six voices. In the game: hurt = ouch / ow / stop it, a tool they didn't ask for = wait / hey, good end = aha / mm-hmm / nice, mid end = hmm / meh.</p>
+<div class="wrap"><table id="t"></table></div>
+<script>
+const V={m1:'Man 1 (Roger)',m2:'Man 2 (Chris)',m3:'Man 3 (Eric)',f1:'Woman 1 (Courtney)',f2:'Woman 2 (Trinity)',f3:'Woman 3 (Campbell)'};
+const W=['ouch','ow','stop','wait','hey','aha','mmhmm','nice','hmm','meh'];
+const t=document.getElementById('t');
+t.innerHTML='<tr><th>Voice</th>'+W.map(w=>`<th>${w}</th>`).join('')+'</tr>'+Object.entries(V).map(([k,n])=>`<tr><td>${n}</td>`+W.map(w=>`<td><button data-s="${k}-${w}">${w}</button></td>`).join('')+'</tr>').join('');
+let a=null;
+t.onclick=e=>{const b=e.target.closest('button');if(!b)return;if(a)a.pause();document.querySelectorAll('.on').forEach(x=>x.classList.remove('on'));
+a=new Audio(`../sounds/voice/${b.dataset.s}.mp3`);b.classList.add('on');a.onended=()=>b.classList.remove('on');a.play();};
+</script></body></html>
