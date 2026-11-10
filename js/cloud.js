@@ -71,7 +71,12 @@ export class Cloud {
     const send = async (token) => fetch(API + path, { method, headers: headers(token), body: body ? JSON.stringify(body) : undefined });
     let r = await send(await this.token());
     if (r.status === 401) { this.session = { ...this.session, expires_at: 0 }; r = await send(await this.token()); }
-    if (!r.ok) throw new Error(`cloud ${r.status}`);
+    if (!r.ok) {
+      const e = new Error(`cloud ${r.status}`);
+      e.status = r.status;
+      try { e.msg = (await r.json()).message || ''; } catch { e.msg = ''; } // the database's reason, if any
+      throw e;
+    }
     return r.status === 204 ? null : r.json();
   }
 

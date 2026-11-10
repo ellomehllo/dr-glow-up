@@ -5,6 +5,8 @@ import { TAU, makeCanvas } from './draw.js';
 import { headPath, CAP_PATH, DIRT_BOX } from './patient.js';
 
 const RES = 1.5;
+// washed-off spots, kept as a coarse grid so a look can carry them (look.js)
+const CELL = 20, GW = Math.ceil(DIRT_BOX.w / CELL), GH = Math.ceil(DIRT_BOX.h / CELL);
 
 function rng(seed) {
   return () => {
@@ -94,6 +96,7 @@ export class Dirt {
   // paint fresh grime for a new patient
   setup(o) { paint(this.start, o); this.reset(); }
   reset() {
+    this.wiped = new Uint8Array(GW * GH);
     const c = this.ctx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.globalCompositeOperation = 'copy';
@@ -103,9 +106,53 @@ export class Dirt {
   }
   // erase a soft round patch (head-space units)
   erase(x, y, r) {
+    this.mark(x, y, r * 0.75, 1);
+    this.rub(x, y, r);
+  }
+  // set the washed-off grid within r of (x, y): 1 washed, 0 grimy
+  mark(x, y, r, v) {
+    let n = 0;
+    for (let gy = Math.max(0, Math.floor((y - r - DIRT_BOX.y) / CELL)); gy < GH && DIRT_BOX.y + gy * CELL <= y + r; gy++) {
+      for (let gx = Math.max(0, Math.floor((x - r - DIRT_BOX.x) / CELL)); gx < GW && DIRT_BOX.x + gx * CELL <= x + r; gx++) {
+        const cx = DIRT_BOX.x + (gx + 0.5) * CELL, cy = DIRT_BOX.y + (gy + 0.5) * CELL, i = gy * GW + gx;
+        if (Math.hypot(cx - x, cy - y) <= Math.max(r, CELL * 0.5) && this.wiped[i] !== v) { this.wiped[i] = v; n++; }
+      }
+    }
+    return n;
+  }
+  rub(x, y, r) {
     const c = this.ctx;
     c.globalCompositeOperation = 'destination-out';
     c.drawImage(this.brush, x - r, y - r, r * 2, r * 2);
     c.globalCompositeOperation = 'source-over';
   }
+  // the washed-off grid as hex (4 cells a digit), and back: washes each cell again
+  wipedCode() {
+    let out = '';
+    for (let i = 0; i < this.wiped.length; i += 4) {
+      let v = 0;
+      for (let b = 0; b < 4; b++) if (this.wiped[i + b]) v |= 1 << b;
+      out += v.toString(16);
+    }
+    return /^0*$/.test(out) ? '' : out;
+  }
+  applyWiped(code) {
+    if (!code) return;
+    for (let k = 0; k < code.length; k++) {
+      const v = parseInt(code[k], 16) || 0;
+      for (let b = 0; b < 4; b++) { const i = k * 4 + b; if (i < GW * GH) this.wiped[i] = v & (1 << b) ? 1 : 0; }
+    }
+    this.redraw();
+  }
+  // the grime again from the washed-off grid: the fresh grime, every washed cell rubbed off
+  redraw() {
+    const w = this.wiped;
+    this.reset();
+    this.wiped = w;
+    for (let i = 0; i < w.length; i++) if (w[i]) this.rub(DIRT_BOX.x + (i % GW + 0.5) * CELL, DIRT_BOX.y + (Math.floor(i / GW) + 0.5) * CELL, CELL * 1.35);
+  }
+  // all washed off (a clean face that grime can be rubbed back onto)
+  wipeAll() { this.wiped.fill(1); this.redraw(); }
+  // rub grime back on within r of (x, y) (the creator's grime tool); true if any came back
+  grime(x, y, r) { if (!this.mark(x, y, r, 0)) return false; this.redraw(); return true; }
 }

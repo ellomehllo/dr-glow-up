@@ -149,6 +149,51 @@ function regular() {
   };
 }
 
+// ---------- the character creator (multiplayer, creator.js) ----------
+// everything a player can pick, as plain lists the creator shows
+const HAIRS = [
+  ...NATURAL.map((h, i) => ({ id: `n${i}`, ...h })),
+  ...Object.entries(DYE).map(([k, h]) => ({ id: k, ...h })),
+  ...GREYS.map((h, i) => ({ id: `g${i}`, ...h })),
+];
+export const MAKER = {
+  kinds: PATIENT_KINDS,
+  skins: SKINS.map((s) => s.base),
+  hairs: HAIRS.map((h) => ({ id: h.id, c: h.c })),
+  styles: ['straight', 'neat', 'wavy', 'curly', 'afro', 'bob', 'bun', 'locs', 'messy', 'spiky', 'mohawk', 'slick', 'buzz', 'bald'],
+  eyes: EYES.map((e) => e.c),
+  builds: ['skinny', 'medium', 'chubby', 'broad', 'huge'],
+};
+// a made character: a kind (its outfit and features, from seed) with the player's picks
+// on top. picks: { kind, seed, skin, hair, style, eye, build } (indexes / ids; any left
+// out come from the kind)
+export function makeWho(p) {
+  const kind = MAKER.kinds.includes(p.kind) ? p.kind : 'regular';
+  R = seeded(p.seed | 0);
+  try {
+    const who = randomPatient(kind);
+    if (p.skin != null && SKINS[p.skin]) who.skin = SKINS[p.skin];
+    const h = HAIRS.find((x) => x.id === p.hair);
+    if (h) {
+      who.hair = h.c; who.hairHi = h.hi;
+      const dyed = Object.values(DYE).some((d) => d.c === h.c), grey = GREYS.some((g) => g.c === h.c);
+      who.brow = grey ? h.c : dyed || who.darkBrows ? '#2c1f24' : mix(h.c, '#2a1a20', 0.45);
+    }
+    if (MAKER.styles.includes(p.style)) who.style = p.style;
+    if (p.eye != null && EYES[p.eye]) who.eye = EYES[p.eye];
+    if (MAKER.builds.includes(p.build)) who.build = p.build;
+    return who;
+  } finally { R = Math.random; }
+}
+// the picks a kind starts with (what makeWho gives with nothing picked), for the creator
+export function whoPicks(kind, seed) {
+  const w = makeWho({ kind, seed });
+  return {
+    kind, seed, skin: SKINS.indexOf(w.skin), hair: (HAIRS.find((h) => h.c === w.hair) || HAIRS[0]).id,
+    style: w.style, eye: EYES.indexOf(w.eye), build: w.build,
+  };
+}
+
 // the kind of patient on each level: shuffled decks of all ten characters and two
 // regular patients, dealt down the levels with no kind twice in a row
 const SEQ = [];

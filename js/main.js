@@ -6,6 +6,8 @@ import { Sound } from './audio.js';
 import { UI } from './ui.js';
 import { Playables } from './playables.js';
 import { Cloud } from './cloud.js';
+import { Multi } from './multi.js';
+import { cleanCode } from './mp.js';
 import { Game } from './game.js';
 import { Director } from './camera.js';
 import { Backdrop } from './backdrop.js';
@@ -74,6 +76,21 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 game.start();
+// multiplayer (multi.js): the people button in the top bar; where the cloud runs
+const multi = new Multi(game, cloud, document.getElementById('ui'));
+window.__multi = multi;
+// an invite link (?room=CODE): straight into joining that room (the code leaves the address)
+const room = cleanCode(qs.get('room'));
+if (qs.has('room')) {
+  qs.delete('room');
+  const rest = qs.toString();
+  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+}
+if (room && multi.available) multi.open({ code: room });
+// ?mp: the multiplayer character creator on its own (testing)
+else if (qs.has('mp')) { if (qs.has('salon')) game.afterCreator = 'salon'; game.openCreator(); }
+// ?salon: a 90 second salon turn on your own character (milestone 2, offline)
+else if (qs.has('salon')) game.trySalon();
 window.__bootMs = performance.now() - T0;
 
 // ---------- pause ----------

@@ -34,8 +34,12 @@ import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES, STYLE_IDS } fro
 import { REGISTRY } from './tools/index.js';
 import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress } from './scoring.js';
 import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, onFace, eyeSide, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
-import { patientFor, randomPatient, pickKind } from './people.js';
+import { patientFor, randomPatient, pickKind, makeWho } from './people.js';
+import { Creator } from './creator.js';
+import { SalonUI } from './salon.js';
 import { rollExtras, inMouth } from './extras.js';
+import { toLook, fromLook } from './look.js';
+import { Dirt } from './dirt.js';
 import { PALETTES, PAINT_AT, swatchesFor, setPaint, paintNow, onPaint, rubLength, pierceSpot, pierceCost, PIERCE, GEMS, CLIPS, SHADES, nextShades, onEyes, SPOT_AT, rollWish, wishLine, wishPrompt, touched, wishScore } from './style.js';
 import { HURT, HURT_KIND, temperOf, lineFor, feelingFor, faceFor, BAD } from './mood.js';
 import { easeIO, rand, TAU, shuffle } from './draw.js';
@@ -67,6 +71,7 @@ function heldImage(icon) {
   return HELD[icon];
 }
 const HELD_PX = 256; // the cached icon: 192 px of icon and room for its shadow
+const SALON_SECS = 90; // a multiplayer turn
 const PEEK = 1.7; // seconds a look in the mouth (or at the waiting room window) lasts
 const TAP_IGNORE = 0.06; // a release before this much progress is a false start, not a release
 const TRANSITION = 0.9;
@@ -559,6 +564,7 @@ export class Game {
     for (const t of this.entered) { t.exit(); t.outro = false; }
     this.entered.clear();
     this.level = n;
+    if (this.salon) this.leaveSalon();
     this.setup = o.setup || this.makeSetup(n, o);
     resetState(this.s, this.setup);
     resetState(this.before, this.setup);
@@ -594,6 +600,244 @@ export class Game {
     this.sayWish(1.1);
     this.setMode('arrive');
     this.retryMs = performance.now() - t0;
+  }
+  // ---------- the character creator (multiplayer, creator.js) ----------
+  // a made patient's setup: who (people.js makeWho picks) and the problems they come in
+  // with (creator.js PROBLEMS ids); seed keeps where the pimples, scars... sit while the
+  // player changes other things
+  customSetup(picks, problems, seed) {
+    const has = (id) => problems.includes(id), rnd = Math.random;
+    let r = seed | 0;
+    Math.random = () => { r = (r + 0x6d2b79f5) | 0; let t = Math.imul(r ^ (r >>> 15), 1 | r); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    try {
+      const pimples = has('pimples') ? shuffle(PIMPLE_SPOTS.slice()).slice(0, 6) : [];
+      return {
+        level: -1, who: makeWho(picks), pimples, wish: null, extras: [], debris: [], worms: [], own: [], dent: null, tools: [],
+        cracks: has('scars') ? some(CRACKS, 2) : [],
+        spots: has('spots') ? pickSpots(8, pimples) : [],
+        wrinkles: has('wrinkles') ? some(WRINKLES, 4) : [],
+        jaw0: has('jaw') ? 0 : 0.7, mew0: has('slouch') ? 0 : 1,
+        hair0: has('hair') ? 0 : 1, brow0: has('hair') ? 0 : 0.75,
+        nose0: has('nose') ? 0 : 1, circ0: has('circles') ? 1 : 0, teeth0: has('teeth') ? 0 : 1,
+        dirt: 0.8, seed: seed | 0, // grime is always there to rub back on; washed off unless they came in grimy (creator.js)
+      };
+    } finally { Math.random = rnd; }
+  }
+  // dress the patient in the chair as this setup (the creator's live preview)
+  dressUp(setup, hop = true) {
+    this.setup = setup;
+    resetState(this.s, setup);
+    resetState(this.before, setup);
+    this.dirt.setup(setup);
+    if (hop) this.s.hopV = -380;
+  }
+  // open the creator: the game steps aside (no HUD, no tools) and the patient in the chair
+  // becomes the character being made
+  openCreator() {
+    if (this.mode === 'creator') return;
+    this.closeKit();
+    for (const t of this.entered) { t.exit(); t.outro = false; }
+    this.entered.clear();
+    this.tool = null; this.style = null; this.timers = []; this.windowT = 0;
+    this.fx.clear(); this.audio.stopLoops();
+    this.ui.reset();
+    this.setMode('creator');
+    this.director.setObstruction(this.ui.obstruction('creator'), true);
+    this.director.go(this.view({ x: 0, y: 40, r: 360, rel: true }), 0.6);
+    if (!this.creator) this.creator = new Creator(document.getElementById('ui'), this);
+    this.creator.open();
+  }
+  // the creator closed (saved or not): back to the clinic, on the level the player was on,
+  // or (?salon) straight into a salon turn on the character
+  closeCreator() {
+    const sv = Creator.saved(), after = this.afterCreator;
+    if (after === 'mp' && this.multi) { this.afterCreator = null; this.multi.fromCreator(sv); }
+    else if (after === 'salon' && sv) this.startSalon(sv.look);
+    else this.startLevel(this.level);
+  }
+  // a salon turn on the player's own character (made now if there isn't one yet)
+  trySalon() {
+    const sv = Creator.saved();
+    if (sv) this.startSalon(sv.look);
+    else { this.afterCreator = 'salon'; this.openCreator(); }
+  }
+  // ---------- the salon (multiplayer turn, salon.js) ----------
+  // a turn on a character: they sit down as their look, every unlocked tool is free to use
+  // (no order, no scoring, no guides), and a countdown runs; at the bell the before and
+  // after. o: { secs, onEnd(after look), again, done }
+  startSalon(look, o = {}) {
+    const t0 = performance.now();
+    for (const t of this.entered) { t.exit(); t.outro = false; }
+    this.entered.clear();
+    this.setup = { level: this.level, who: look.who, tools: [], pimples: [], wish: null, extras: [], cracks: [], seed: 11, dirt: 0, jaw0: 0 };
+    resetState(this.s, this.setup); resetState(this.before, this.setup);
+    this.wearLook(look);
+    this.buildTools(); // no order: everything is a free use
+    // the grime as they came in, for the "before" side
+    const bd = this.beforeDirt || (this.beforeDirt = document.createElement('canvas'));
+    bd.width = this.dirt.canvas.width; bd.height = this.dirt.canvas.height;
+    bd.getContext('2d').drawImage(this.dirt.canvas, 0, 0);
+    this.backdrop.fix();
+    this.fx.clear(); this.audio.stopLoops();
+    this.scores = []; this.verdicts = []; this.timers = []; this.windowT = 0;
+    this.flash = 0; this.g.fail = 0; this.g.hit = 0; this.g.ghost = -1; this.g.prog = 0; this.g.hint = false;
+    this.tool = null; this.idx = -1; this.style = null;
+    this.used = new Set(); this.spares = {}; this.spare = false;
+    this.clearHurts();
+    this.ui.reset();
+    this.ui.setSteps([], []);
+    this.refreshKit();
+    this.ui.titleCard(false);
+    this.salon = { left: o.secs || SALON_SECS, secs: o.secs || SALON_SECS, look, o };
+    if (!this.salonUI) this.salonUI = new SalonUI(document.getElementById('ui'), { onAgain: () => this.salonAgain(), onDone: () => this.salonDone() });
+    this.salonUI.show();
+    this.salonUI.tick(this.salon.left);
+    this.director.setObstruction(this.ui.obstruction('play'));
+    this.director.go(this.view(VIEWS.pick), 0.6);
+    this.s.hopV = -720;
+    this.audio.whoosh(0.14);
+    this.toPick();
+    this.retryMs = performance.now() - t0;
+  }
+  // the bell: tools down, the before and after
+  endSalon() {
+    const sl = this.salon;
+    if (!sl || sl.over) return;
+    sl.over = true;
+    this.closeKit();
+    if (this.tool) { if (this.mode === 'holding' || this.mode === 'brushing') this.tool.cancel(); this.tool.exit(); }
+    this.endStyle(false);
+    this.tool = null; this.style = null;
+    for (const t of this.entered) { t.exit(); t.outro = false; }
+    this.entered.clear();
+    this.ui.hidePrompt(); this.ui.hideTool(); this.ui.holding(false);
+    sl.after = this.lookNow();
+    this.salonUI.over(!sl.o.mp); // a multiplayer turn: no Again/Done (multi.js shows what's next)
+    this.live = null;
+    this.flash = 1;
+    this.audio.thud(); this.director.shake(0.35);
+    this.director.go(this.view(VIEWS.results), 1.2);
+    this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()));
+    this.ui.layoutSplit(this.director.obsGoal);
+    this.ui.el.ba.classList.add('in'); this.ui.setSplit(0);
+    this.splitV = 0; this.splitUser = false;
+    react(this.s, 'happy', 1.4, 'grin');
+    this.setMode('reveal');
+    if (sl.o.onEnd) sl.o.onEnd(sl.after);
+  }
+  // another turn on the character as it is now
+  salonAgain() { if (this.salon && this.salon.over) this.startSalon(this.salon.after, this.salon.o); }
+  // out of the salon: back to the clinic
+  salonDone() {
+    const sl = this.salon;
+    this.leaveSalon();
+    if (sl && sl.o.done) sl.o.done(sl.after); else this.startLevel(this.level);
+  }
+  leaveSalon() {
+    this.salon = null; this.beforeDirt = null; this.live = null;
+    if (this.salonUI) this.salonUI.hide();
+    this.ui.el.ba.classList.remove('in');
+  }
+  // room the bar under a before and after takes (the salon's own, or the multiplayer sheet)
+  revealBelow() {
+    if (this.belowFn) return this.belowFn();
+    return this.salonUI ? this.salonUI.endHeight() : 0;
+  }
+  // ---------- multiplayer (multi.js) ----------
+  // step aside for the multiplayer screens with a character in the chair (look; null keeps
+  // the one there). below(): room the screens take at the bottom
+  showLook(look, below) {
+    this.closeKit();
+    if (this.salon) this.leaveSalon();
+    for (const t of this.entered) { t.exit(); t.outro = false; }
+    this.entered.clear();
+    this.tool = null; this.style = null; this.timers = []; this.windowT = 0;
+    this.fx.clear(); this.audio.stopLoops();
+    this.ui.reset(); this.ui.titleCard(false);
+    this.splitV = 0;
+    this.belowFn = below || null;
+    if (look) {
+      this.setup = { level: this.level, who: look.who, tools: [], pimples: [], wish: null, extras: [], cracks: [], seed: 11, dirt: 0, jaw0: 0 };
+      resetState(this.s, this.setup); resetState(this.before, this.setup);
+      this.wearLook(look);
+      this.s.hopV = -380;
+      this.audio.whoosh(0.1);
+    }
+    this.setMode('lobby');
+    this.frameLook(true);
+  }
+  // keep the character clear of the multiplayer sheet (after it changes size)
+  frameLook(snap = false) {
+    this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()), snap);
+    this.director.go(this.view({ x: 0, y: 40, r: 360, rel: true }), snap ? 0.6 : 0.4);
+  }
+  // the sheet under a before and after changed size
+  reframeReveal() {
+    this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()));
+    if (this.mode === 'reveal') this.ui.layoutSplit(this.director.obsGoal);
+  }
+  // my character before and after the other player's turn on it
+  revealLooks(before, after, below) {
+    this.showLook(before, below);
+    const bd = this.beforeDirt || (this.beforeDirt = document.createElement('canvas'));
+    bd.width = this.dirt.canvas.width; bd.height = this.dirt.canvas.height;
+    bd.getContext('2d').drawImage(this.dirt.canvas, 0, 0);
+    this.wearLook(after, false);
+    this.flash = 1;
+    this.audio.thud(); this.director.shake(0.35);
+    this.director.go(this.view(VIEWS.results), 1.2);
+    this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()));
+    this.ui.layoutSplit(this.director.obsGoal);
+    this.ui.el.ba.classList.add('in'); this.ui.setSplit(0);
+    this.splitV = 0; this.splitUser = false;
+    react(this.s, 'happy', 1.4, 'grin');
+    this.setMode('reveal');
+  }
+  // the small live window: my character as the other player has it right now (null: none)
+  setLive(look) {
+    if (!look) { this.live = null; return; }
+    try {
+      const r = fromLook(look);
+      const lv = this.live || (this.live = { s: null, dirt: this.liveDirt || (this.liveDirt = new Dirt()), key: '' });
+      const key = `${r.setup.seed}|${r.setup.dirt}|${r.setup.jaw0}`;
+      if (lv.key !== key) { lv.dirt.setup(r.setup); lv.key = key; }
+      lv.dirt.applyWiped(r.wiped);
+      if (lv.s) { for (const k of ['look', 'lookAt', 'blink', 'blinkT', 'bob', 'expr', 'mouth']) if (k in lv.s) r.s[k] = lv.s[k]; }
+      lv.s = r.s;
+    } catch { /* a look that doesn't load: keep the last one */ }
+  }
+  drawLive(ctx, W, H, time) {
+    const lv = this.live;
+    if (!lv || !lv.s || !this.salon || this.salon.over) return;
+    const w = Math.round(Math.min(132, W * 0.26)), h = Math.round(w * 1.2);
+    const x = W - w - 12, y = Math.max(64, this.ui.obstruction('play').top);
+    ctx.save();
+    ctx.shadowColor = 'rgba(58,39,71,.22)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 6;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 18); ctx.fillStyle = '#fff4fa'; ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.clip();
+    const k = h / 560, c = headToStage(lv.s, 0, 30);
+    ctx.translate(x + w / 2, y + h * 0.5); ctx.scale(k, k); ctx.translate(-c.x, -c.y);
+    drawPatient(ctx, lv.s, time, lv.dirt.canvas);
+    ctx.restore();
+    ctx.save();
+    ctx.font = '700 12px Fredoka, system-ui, sans-serif'; ctx.textAlign = 'center';
+    const lw = ctx.measureText('YOURS').width + 16;
+    ctx.beginPath(); ctx.roundRect(x + w / 2 - lw / 2, y + h - 26, lw, 20, 10); ctx.fillStyle = 'rgba(58,39,71,.78)'; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText('YOURS', x + w / 2, y + h - 12);
+    ctx.restore();
+  }
+  // ---------- looks (multiplayer, look.js) ----------
+  // the patient in the chair as a look
+  lookNow() { return toLook(this.s, this.dirt, this.setup); }
+  // put a look on the patient in the chair (its grime too); before: also as the "before"
+  wearLook(look, before = true) {
+    const r = fromLook(look);
+    Object.assign(this.s, r.s);
+    if (before) Object.assign(this.before, fromLook(look).s);
+    this.setup = { ...this.setup, who: r.s.who, seed: r.setup.seed, dirt: r.setup.dirt, jaw0: r.setup.jaw0 };
+    this.dirt.setup(r.setup);
+    this.dirt.applyWiped(r.wiped);
   }
   // a free use of a tool: one this patient doesn't need, or needs but has had already. It
   // scores nothing; it keeps its own progress until it is finished
@@ -669,8 +913,9 @@ export class Game {
   // tools that don't draw themselves (pop, mew, every style tool) show their kit icon:
   // at the finger while it is down, bobbing beside the face while it is up
   drawHeld(ctx, time) {
-    const id = this.style ? this.style.def.icon : this.tool && HELD_ICON.has(this.tool.def.id) && this.entered.has(this.tool) && !this.tool.outro ? this.tool.def.icon : null;
-    if (!id || !PLAYING.has(this.mode) || this.mode === 'transition') return;
+    const mk = this.mode === 'creator' && this.creator && this.creator.tool;
+    const id = mk ? mk.icon : this.style ? this.style.def.icon : this.tool && HELD_ICON.has(this.tool.def.id) && this.entered.has(this.tool) && !this.tool.outro ? this.tool.def.icon : null;
+    if (!id || (!mk && !PLAYING.has(this.mode)) || this.mode === 'transition') return;
     const img = heldImage(id);
     if (!img) return;
     const S = 92 / this.director.out.s; // about 92 px on screen at any zoom
@@ -1006,6 +1251,7 @@ export class Game {
   }
   // everything in the order done: the finale; else pick the next
   afterTool() {
+    if (this.salon) { this.toPick(); return; } // the salon has no order: just the next tool
     if (this.used.size >= this.defs.length) this.startFinale();
     else this.toPick();
   }
@@ -1125,6 +1371,9 @@ export class Game {
     if (this.mode === 'results') {
       this.director.setObstruction(this.ui.obstruction('results'), true);
       this.ui.layoutSplit(this.director.obsGoal);
+    } else if (this.mode === 'reveal' || this.mode === 'lobby') {
+      this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()), true);
+      if (this.mode === 'reveal') this.ui.layoutSplit(this.director.obsGoal);
     } else this.director.setObstruction(this.ui.obstruction(this.mode === 'intro' ? 'intro' : 'play'), true);
   }
 
@@ -1133,6 +1382,7 @@ export class Game {
     this.audio.init();
     if (this.tut && this.tut.active) return; // a coach mark is up: it takes the press
     const m = this.mode;
+    if (m === 'creator') { if (src !== 'key') this.creator.down(this.pointer()); return; }
     // with the kit open, presses land on the kit; only Space gets here (it closes the kit)
     if (this.ui.kitOpen) this.closeKit();
     // waiting for a tool: a press on the mouth says "aah" (a look at the teeth), anywhere
@@ -1148,6 +1398,7 @@ export class Game {
   }
   onUp(src) {
     const m = this.mode;
+    if (m === 'creator') { this.creator.up(); return; }
     if (m === 'holding') {
       const tool = this.tool, def = tool.def;
       // a multi-hold treatment keeps its progress between presses
@@ -1177,6 +1428,12 @@ export class Game {
     if (this.timers.length) {
       const due = this.timers.filter((t) => t.t <= time);
       if (due.length) { this.timers = this.timers.filter((t) => t.t > time); due.forEach((t) => t.fn()); }
+    }
+    if (this.mode === 'creator' && this.creator) this.creator.tick(dt, this.pointer());
+    if (this.salon && !this.salon.over && PLAYING.has(this.mode)) {
+      this.salon.left -= dt;
+      this.salonUI.tick(this.salon.left);
+      if (this.salon.left <= 0) this.endSalon();
     }
     const tool = this.tool, def = tool && tool.def;
     let prog = g.prog;
@@ -1238,6 +1495,7 @@ export class Game {
       case 'finale':
         this.fit(dt);
         break;
+      case 'reveal':
       case 'results': {
         this.fit(dt);
         if (!this.splitUser) {
@@ -1252,7 +1510,9 @@ export class Game {
     g.prog = prog;
     g.hint = this.mode === 'ready' && this.ghost; // first time: show where to press
     tickPatient(s, dt, time);
-    if (this.mode === 'results') tickPatient(this.before, dt, time);
+    if (this.mode === 'results' || this.mode === 'reveal') tickPatient(this.before, dt, time);
+    if (this.live && this.live.s) tickPatient(this.live.s, dt, time);
+    if (this.multi) this.multi.update(dt);
     this.waiting.update(dt, time);
     this.backdrop.update(dt);
     if (tool && this.entered.has(tool) && this.mode !== 'finale' && this.mode !== 'results') tool.update(dt);
@@ -1279,7 +1539,7 @@ export class Game {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const hs = d.toScreen(0, headY(s));
     this.backdrop.draw(ctx, W, H, time, d.out, hs.x, hs.y);
-    const split = this.mode === 'results' && this.splitV > 0.001;
+    const split = (this.mode === 'results' || this.mode === 'reveal') && this.splitV > 0.001;
     if (split) {
       const sx = this.ui.splitScreenX(this.splitV, W) * W;
       this.splitScreenPx = sx;
@@ -1287,7 +1547,7 @@ export class Game {
       d.apply(ctx); drawPatient(ctx, s, time, this.dirt.canvas);
       ctx.restore();
       ctx.save(); ctx.beginPath(); ctx.rect(0, 0, sx, H); ctx.clip();
-      d.apply(ctx); drawPatient(ctx, this.before, time, this.dirt.start);
+      d.apply(ctx); drawPatient(ctx, this.before, time, this.beforeDirt || this.dirt.start);
       ctx.restore();
     } else {
       this.splitScreenPx = -1;
@@ -1308,6 +1568,7 @@ export class Game {
       ctx.lineWidth = 4; ctx.strokeStyle = '#ffffff'; ctx.stroke();
     }
     this.fx.drawScreen(ctx);
+    this.drawLive(ctx, W, H, time);
     if (this.flash > 0.01) { ctx.fillStyle = `rgba(255,255,255,${Math.min(1, this.flash * 1.2)})`; ctx.fillRect(0, 0, W, H); }
   }
 }
