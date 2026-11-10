@@ -52,7 +52,7 @@ export class RaspTool extends Tool {
     s.hair = Math.max(s.hair, this.grown / CURLS.length);
     g.fx.spark(w.x, w.y, { size: rand(12, 18), vy: -60 });
     g.fx.glitter(w.x, w.y, 3, 160);
-    g.audio.boing(0.9 + (c.x + 172) / 344 * 0.6);
+    g.audio.tick();
   }
   // paint one small step of a stroke at head-space (x, y)
   paintAt(x, y, step) {
@@ -76,7 +76,7 @@ export class RaspTool extends Tool {
         this.browDone[b] = true;
         const m = g.head(B[4].x, B[4].y);
         g.fx.burst(m.x, m.y, 5, 160, { size: rand(8, 12) });
-        g.audio.tink(1.2);
+        g.audio.tick();
       }
       s[key] = Math.max(s[key], this.browDone[b] ? 1 : f / 0.8);
     }
@@ -84,7 +84,7 @@ export class RaspTool extends Tool {
     if (x > UNI.x0 && x < UNI.x1 && y > UNI.y0 && y < UNI.y1) {
       const was = s.uni;
       s.uni = Math.min(1, s.uni + step / 85); // one swipe across costs ~20 points, two ~40
-      if (was < 0.05 && s.uni >= 0.05) { g.audio.boing(0.6); g.react('wide', 0.8, 'o'); }
+      if (was < 0.05 && s.uni >= 0.05) { g.audio.nope(); g.react('wide', 0.8, 'o'); }
       return;
     }
     // anywhere else on the face: stray hairs
@@ -95,7 +95,7 @@ export class RaspTool extends Tool {
         s.strays.push({ x, y, rot: rand(-0.7, 0.7), t: 0 });
         const w = g.head(x, y);
         g.fx.puff(w.x, w.y, 1, '255,190,200');
-        g.audio.boing(0.55);
+        g.audio.nope();
         g.react('wide', 0.5, 'o');
         g.fail = Math.max(g.fail, 0.6);
       }
@@ -122,10 +122,10 @@ export class RaspTool extends Tool {
     this.tip = to;
     this.trail.push({ x: to.x, y: to.y, t: g.time });
     s.lookAt = { x: to.x * 0.5, y: Math.min(-60, to.y) };
-    g.audio.level('rasp', this.moving ? 0.2 : 0.04);
+    g.audio.toolLoop('rasp', this.moving ? 1 : 0.15);
   }
-  lift() { this.tip = null; this.moving = false; this.g.audio.level('rasp', 0); }
-  idle() { this.g.audio.level('rasp', 0); }
+  lift() { this.tip = null; this.moving = false; this.g.audio.toolLoop('rasp', 0); }
+  idle() { this.g.audio.toolLoop('rasp', 0); }
   coverage() {
     const hair = Math.min(1, this.grown / (CURLS.length - 2));
     const brow = (b) => (this.browDone[b] ? 1 : this.browHit[b].filter(Boolean).length / (BROW_N * 0.8));
@@ -145,19 +145,19 @@ export class RaspTool extends Tool {
     // the last stragglers fill in, the brows settle
     CURLS.forEach((c, i) => { if (s.curls[i] < 0) this.sprout(i); });
     s.hair = 1; s.browL = 1; s.browR = 1;
-    g.audio.level('rasp', 0);
+    g.audio.toolLoop('rasp', 0);
     if (result.verdict === 'perfect' || result.verdict === 'good') {
       for (const side of [-1, 1]) {
         const w = g.head(side * 86, 10);
         g.fx.spark(w.x, w.y, { size: 24, life: 0.9 });
         g.fx.burst(w.x, w.y, 5, 160, { size: rand(8, 12) });
       }
-      g.audio.shing();
+      g.audio.toolDone('rasp');
       g.react('normal', 1.4, 'smirk');
-    } else { g.react('wide', 1.2, 'o'); g.audio.boing(0.6); }
+    } else { g.react('wide', 1.2, 'o'); g.audio.nope(); }
     return result;
   }
-  exit() { super.exit(); this.g.audio.level('rasp', 0); }
+  exit() { super.exit(); this.g.audio.toolLoop('rasp', 0); }
   draw(ctx, time) {
     if (this.alpha < 0.01) return;
     const { g } = this, s = g.s;

@@ -37,7 +37,7 @@ export class IronTool extends Tool {
     const { g } = this, s = g.s, i = this.cur, w = s.wrk[i], sw = this.sw, max = this.def.hold.max;
     w.f = p;
     w.red = p > sw.c + sw.w ? Math.min(1, (p - sw.c - sw.w) / (max - sw.c - sw.w)) : 0;
-    g.audio.level('steam', 0.22 + 0.2 * w.red);
+    g.audio.toolLoop('iron', 1);
     this.acc += dt;
     if (this.acc > (w.red > 0 ? 0.05 : 0.11)) {
       this.acc = 0;
@@ -51,7 +51,7 @@ export class IronTool extends Tool {
     this.wasIn = inZone;
   }
   cancel() { const s = this.g.s; if (this.cur >= 0) { s.wrk[this.cur].f = 0; s.wrk[this.cur].red = 0; } this.idle(); this.g.react('normal', 0.01); }
-  idle() { this.g.audio.level('steam', 0); }
+  idle() { this.g.audio.toolLoop('iron', 0); }
   releaseTarget(i, p, result) {
     const { g } = this, w = this.g.s.wrk[i];
     this.idle(); this.wasIn = false;
@@ -60,7 +60,7 @@ export class IronTool extends Tool {
       const pts = [];
       for (let k = 0; k <= 5; k++) { const q = this.front(i, k / 5); pts.push(g.head(q.x, q.y)); }
       g.fx.along(pts, 5, { step: 0.035 });
-      g.audio.shing();
+      g.audio.toolDone('iron');
       g.react('happy', 0.9, 'grin');
     } else if (result.verdict === 'late') {
       const e = this.front(i, 1), q = g.head(e.x, e.y);

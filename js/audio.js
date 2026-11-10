@@ -28,6 +28,24 @@ function voiceOf(who) {
   const g = FEMALE.has(k) ? 'f' : MALE.has(k) ? 'm' : (seed >> 3) % 2 ? 'f' : 'm';
   return VOICES[g][seed % 3];
 }
+// every tool has its own recorded sounds in sounds/tool: <tool>-loop while it is held,
+// <tool>-hit for one action (a zap, a pluck), <tool>-done when its job is finished
+const TOOL_LOOP = ['scrub', 'pop', 'chisel', 'mew', 'rasp', 'gold', 'polish', 'circles', 'laser', 'teeth', 'iron', 'tweeze', 'tbrush', 'drill', 'pliers'];
+const TOOL_HIT = ['pop', 'gold', 'nose', 'laser', 'tweeze', 'pliers'];
+const TOOL_DONE = ['scrub', 'pop', 'chisel', 'mew', 'rasp', 'gold', 'polish', 'nose', 'circles', 'laser', 'teeth', 'iron', 'tweeze', 'tbrush', 'drill', 'pliers'];
+const TOOL_CLIPS = [...TOOL_LOOP.map((t) => t + '-loop'), ...TOOL_HIT.map((t) => t + '-hit'), ...TOOL_DONE.map((t) => t + '-done'), 'tick', 'success', 'nope'];
+// the synth loop each tool falls back to until its recording loads
+const LOOP_FALLBACK = { scrub: 'scrub', tbrush: 'scrub', rasp: 'rasp', gold: 'pour', polish: 'polish', circles: 'steam', iron: 'steam', laser: 'laser', teeth: 'hum', drill: 'hum' };
+const TOOL_VOL = { loop: 0.9, hit: 0.55, done: 0.55, tick: 0.5, success: 0.5, nope: 0.5 };
+// per-clip level trims in dB, measured so each sits at (or under) the level of the old sound it replaces
+const TRIM = {
+  'scrub-loop': -4.5, 'pop-loop': -7, 'chisel-loop': -17.5, 'mew-loop': -13, 'rasp-loop': -5.5, 'gold-loop': -5.5, 'polish-loop': 0,
+  'circles-loop': -2, 'laser-loop': -20, 'teeth-loop': -16.5, 'iron-loop': -5.5, 'tweeze-loop': -5, 'tbrush-loop': -5, 'drill-loop': -7, 'pliers-loop': -14,
+  'pop-hit': -1, 'gold-hit': -13.5, 'nose-hit': 5, 'laser-hit': 4, 'tweeze-hit': -11.5, 'pliers-hit': -14,
+  'scrub-done': -4, 'pop-done': -5, 'chisel-done': -8, 'mew-done': -13, 'rasp-done': -16, 'gold-done': -10, 'polish-done': -9.5, 'nose-done': -11,
+  'circles-done': 4, 'laser-done': -14, 'teeth-done': 3, 'iron-done': 3, 'tweeze-done': -16, 'tbrush-done': -12.5, 'drill-done': -2, 'pliers-done': -6,
+  tick: -8.5, success: 0, nope: -16 };
+const trim = (n) => Math.pow(10, (TRIM[n] || 0) / 20);
 const base = new URL('../sounds/', import.meta.url);
 // loudness of a clip, ENV_RATE steps a second, 0..1 (drives the talking mouth)
 const ENV_RATE = 30;
@@ -50,7 +68,7 @@ export class Sound {
     this.grains = { bubble: 0, bloop: 0 };
     this._acc = { bubble: 0, bloop: 0 };
     this.musicOn = false;
-    this.buf = {}; this.last = {}; this.vbuf = {}; this.venv = {}; this.voiceUntil = 0; this.lineAt = {};
+    this.buf = {}; this.tbuf = {}; this.tl = {}; this.last = {}; this.vbuf = {}; this.venv = {}; this.voiceUntil = 0; this.lineAt = {};
     this.stingUntil = 0; this.talk = null;
     for (const n of SFX) {
       const synth = this[n].bind(this);
@@ -63,8 +81,49 @@ export class Sound {
     const data = await r.arrayBuffer();
     return new Promise((ok, no) => this.ctx.decodeAudioData(data, ok, no));
   }
+  _loadTools() { for (const n of TOOL_CLIPS) this._load(new URL(`tool/${n}.mp3`, base)).then((b) => { this.tbuf[n] = b; }, () => {}); }
+  // a tool's held sound: v 0..1 (0 = silent), rate = optional pitch (tension builds)
+  toolLoop(id, v, rate) {
+    if (!this.ctx) return;
+    const b = this.tbuf[id + '-loop'];
+    if (!b) { // not loaded yet: the old synth sound, so there's still feedback
+      if (LOOP_FALLBACK[id]) this.level(LOOP_FALLBACK[id], v * 0.25);
+      else if (id === 'mew') this.whistle(v > 0 ? (rate || 1) - 0.9 : -1);
+      else this.tension(v > 0 ? ((rate || 1) - 0.9) * 3 : -1);
+      return;
+    }
+    const t = this.ctx.currentTime;
+    let L = this.tl[id];
+    if (!L && v <= 0) return;
+    if (!L) {
+      const src = this.ctx.createBufferSource(); src.buffer = b; src.loop = true;
+      const g = this.ctx.createGain(); g.gain.value = 0;
+      src.connect(g).connect(this.sfxBus); src.start(t, Math.random() * b.duration);
+      L = this.tl[id] = { src, g };
+    }
+    L.g.gain.setTargetAtTime(Math.max(0, Math.min(1, v)) * TOOL_VOL.loop * trim(id + '-loop'), t, v > 0 ? 0.06 : 0.08);
+    if (rate) L.src.playbackRate.setTargetAtTime(Math.max(0.8, Math.min(1.25, rate)), t, 0.05);
+  }
+  _tool(n, kind, pitch = 1) {
+    if (!this.ctx) return false;
+    const b = this.tbuf[n]; if (!b) return false;
+    const t = this.ctx.currentTime;
+    if (t - (this.last[n] || -1) < 0.1) return true;
+    this.last[n] = t;
+    const src = this.ctx.createBufferSource(); src.buffer = b;
+    src.playbackRate.value = Math.max(0.9, Math.min(1.08, pitch));
+    const g = this.ctx.createGain(); g.gain.value = TOOL_VOL[kind] * trim(n);
+    src.connect(g).connect(this.sfxBus); src.start(t);
+    return true;
+  }
+  toolHit(id, pitch = 1) { if (!this._tool(id + '-hit', 'hit', pitch)) this.tick(); }
+  // the tool's job is done: its own sound (no more shared metal swish on every tool)
+  toolDone(id) { if (!this._tool(id + '-done', 'done')) this.sparkle(); }
+  // gentle "not yet / not there" (instead of cartoon boings)
+  nope() { if (!this._tool('nope', 'nope')) this._tone(300, this._t, 0.18, 0.05, 'sine', 220, 0.1); }
   _loadSfx() { for (const n of SFX) this._load(new URL(`sfx/${n}.mp3`, base)).then((b) => { this.buf[n] = b; }, () => {}); }
   _sample(n, pitch) {
+    if ((n === 'tick' || n === 'success') && this.tbuf[n]) return this._tool(n, n);
     const b = this.buf[n]; if (!b) return false;
     const t = this.ctx.currentTime;
     if (t - (this.last[n] || -1) < 0.12) return true; // the same clip stacked up just gets louder and harsher
@@ -146,7 +205,7 @@ export class Sound {
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
     this.noiseBuf = nb;
     this._buildLoops();
-    this._loadSfx();
+    this._loadSfx(); this._loadTools();
     this.startMusic();
   }
   _targetVol() { return this.muted || !this.platformOn ? 0 : 0.85; }
@@ -260,7 +319,7 @@ export class Sound {
     const g = this.loops[name]; if (!g) return;
     g.gain.setTargetAtTime(v, this.ctx.currentTime, tc);
   }
-  stopLoops() { for (const k in this.loops) this.level(k, 0, 0.02); this.grains.bubble = 0; this.grains.bloop = 0; }
+  stopLoops() { for (const k in this.loops) this.level(k, 0, 0.02); for (const k in this.tl) this.tl[k].g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03); this.grains.bubble = 0; this.grains.bloop = 0; }
   tension(k) {
     if (!this.ctx) return;
     if (k < 0) { this.level('squeeze', 0, 0.03); return; }

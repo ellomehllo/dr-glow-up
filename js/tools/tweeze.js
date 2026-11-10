@@ -54,7 +54,7 @@ export class TweezeTool extends Tool {
     const { g } = this, t = this.targets()[this.cur];
     this.k = p / this.sw.c;
     t.ref.pull = this.k;
-    g.audio.tension(this.k * 0.8);
+    g.audio.toolLoop('tweeze', 0.4 + 0.6 * Math.min(1, this.k), 0.9 + 0.2 * Math.min(1.45, this.k));
     if (this.k > 0.75) g.shake(0.004 * this.k);
     const inZone = this.inZone(p);
     if (inZone && !this.wasIn) g.audio.tick();
@@ -63,12 +63,12 @@ export class TweezeTool extends Tool {
   cancel() {
     const t = this.targets()[this.cur];
     if (t) t.ref.pull = 0;
-    this.k = 0; this.g.audio.tension(-1); this.g.react('normal', 0.01);
+    this.k = 0; this.g.audio.toolLoop('tweeze', 0); this.g.react('normal', 0.01);
   }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, t = this.targets()[i], r = t.ref, k = Math.max(0.6, this.k);
     const at = this.grip(t, k), w = g.head(at.x, at.y);
-    g.audio.tension(-1);
+    g.audio.toolLoop('tweeze', 0);
     this.k = 0; this.wasIn = false;
     r.gone = true; r.pull = 0;
     // it flies off the way it was pulled, spinning
@@ -84,12 +84,11 @@ export class TweezeTool extends Tool {
     } else if (result.verdict === 'early') {
       g.fx.puff(w.x, w.y, 2, '255,255,255');
       g.react('normal', 0.6, 'flat');
-      g.audio.boing(0.8);
+      g.audio.nope();
     } else {
       g.fx.ring(w.x, w.y, 3, 26, 0.3, '#ffffff', 5);
       g.fx.burst(w.x, w.y, 5, 220, { size: rand(9, 13) });
-      if (result.verdict === 'perfect') g.audio.sparkle();
-      g.audio.pop(1.3);
+      g.audio.toolHit('tweeze');
       g.react('happy', 0.6, 'o');
     }
     if (t.kind === 'worm' && result.verdict !== 'early') g.fx.text(w.x, w.y - 40, 'EWW!', '#7fe0a0', 26);
@@ -99,7 +98,7 @@ export class TweezeTool extends Tool {
   finish(result) {
     super.finish(result);
     const { g } = this;
-    if (result.verdict === 'perfect' || result.verdict === 'good') { g.react('happy', 1, 'grin'); g.audio.sparkle(); } else g.react('normal', 0.9, 'flat');
+    if (result.verdict === 'perfect' || result.verdict === 'good') { g.react('happy', 1, 'grin'); g.audio.toolDone('tweeze'); } else g.react('normal', 0.9, 'flat');
     return result;
   }
   update(dt) {
@@ -107,7 +106,7 @@ export class TweezeTool extends Tool {
     for (const f of this.fly) { f.life += dt; f.vy += 1400 * dt; f.x += f.vx * dt; f.y += f.vy * dt; f.rot += f.vr * dt; }
     this.fly = this.fly.filter((f) => f.life < 1.1);
   }
-  exit() { super.exit(); this.g.audio.tension(-1); }
+  exit() { super.exit(); this.g.audio.toolLoop('tweeze', 0); }
   draw(ctx, time) {
     if (this.alpha < 0.01) return;
     const { g } = this, s = g.s, T = this.targets();

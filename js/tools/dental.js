@@ -81,11 +81,10 @@ export class BrushTeethTool extends MouthTool {
       this.acc -= 0.16;
       if (this.moving && inMouth(to.x, to.y)) { const w = g.head(this.pos.x, this.pos.y - 10); g.fx.bubbles(w.x, w.y, 1, 14); }
     }
-    g.audio.level('scrub', this.moving ? 0.26 : 0.04);
-    g.audio.grains.bubble = this.moving ? 10 : 0;
+    g.audio.toolLoop('tbrush', this.moving ? 1 : 0.15);
   }
   lift() { this.tip = null; this.idle(); }
-  idle() { this.moving = false; this.g.audio.level('scrub', 0); this.g.audio.grains.bubble = 0; }
+  idle() { this.moving = false; this.g.audio.toolLoop('tbrush', 0); this.g.audio.grains.bubble = 0; }
   coverage() { return Math.min(1, (1 - grime(this.g.s) / this.total) / 0.94); }
   complete() { return grime(this.g.s) <= this.total * 0.06 || this.auto >= 1; }
   finish(result) {
@@ -94,7 +93,7 @@ export class BrushTeethTool extends MouthTool {
     this.idle();
     for (const q of s.dent) { q.plaque = 0; q.food = null; }
     for (let k = 0; k < 6; k++) { const w = g.head(-30 + k * 12, 112 + (k % 2) * 40); g.fx.spark(w.x, w.y, { delay: k * 0.05, size: rand(10, 16), vy: -60 }); }
-    g.audio.shing(); g.audio.sparkle();
+    g.audio.toolDone('tbrush');
     g.react('happy', 0.9, 'aah');
     return result;
   }
@@ -165,7 +164,7 @@ export class DrillTool extends MouthTool {
     const { g } = this, s = g.s, i = this.teeth()[this.cur], d = s.dent[i], sw = this.sw;
     this.k = p / sw.c;
     d.fill = Math.min(1, this.k);
-    g.audio.level('hum', 0.2 + 0.1 * Math.min(1, this.k));
+    g.audio.toolLoop('drill', 0.7 + 0.3 * Math.min(1, this.k), 0.95 + 0.1 * Math.min(1, this.k));
     this.acc += dt;
     if (this.acc > 0.06) {
       this.acc = 0;
@@ -183,12 +182,12 @@ export class DrillTool extends MouthTool {
     if (i !== undefined) { const d = this.g.s.dent[i]; d.fill = 0; if (this.made) d.cav = 0; }
     this.idle(); this.g.react('normal', 0.01, 'aah');
   }
-  idle() { this.g.audio.level('hum', 0); }
+  idle() { this.g.audio.toolLoop('drill', 0); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, d = s.dent[this.teeth()[i]], q = toothAt(this.teeth()[i]), w = g.head(q.x, q.y);
     this.idle(); this.wasIn = false; this.k = 0;
     d.cav = 2;
-    if (result.verdict === 'early') { d.fill = Math.min(d.fill, 0.6); g.react('normal', 0.6, 'aah'); g.audio.boing(0.8); return result; }
+    if (result.verdict === 'early') { d.fill = Math.min(d.fill, 0.6); g.react('normal', 0.6, 'aah'); g.audio.nope(); return result; }
     d.fill = 1;
     if (result.verdict === 'late') {
       g.fx.text(w.x + 40, w.y - 50, 'OUCH!', '#ff7d9a', 26);
@@ -196,8 +195,8 @@ export class DrillTool extends MouthTool {
       g.audio.nick();
     } else {
       g.fx.ring(w.x, w.y, 3, 22, 0.3, '#ffffff', 4);
-      if (result.verdict === 'perfect') { g.fx.burst(w.x, w.y, 5, 180, { size: rand(8, 12) }); g.audio.sparkle(); }
-      g.audio.shing();
+      if (result.verdict === 'perfect') { g.fx.burst(w.x, w.y, 5, 180, { size: rand(8, 12) }); }
+      g.audio.toolDone('drill');
       g.react('normal', 0.5, 'aah');
     }
     return result;
@@ -279,20 +278,20 @@ export class PliersTool extends MouthTool {
     const { g } = this, d = g.s.dent[this.teeth()[this.cur]];
     this.k = p / this.sw.c;
     d.out = this.k;
-    g.audio.tension(this.k);
+    g.audio.toolLoop('pliers', 0.4 + 0.6 * Math.min(1, this.k), 0.9 + 0.22 * Math.min(1.45, this.k));
     if (this.k > 0.6) g.shake(0.006 * this.k);
     const inZone = this.inZone(p);
     if (inZone && !this.wasIn) g.audio.tick();
     this.wasIn = inZone;
   }
-  cancel() { const i = this.teeth()[this.cur]; if (i !== undefined) this.g.s.dent[i].out = 0; this.k = 0; this.g.audio.tension(-1); this.g.react('normal', 0.01, 'aah'); }
+  cancel() { const i = this.teeth()[this.cur]; if (i !== undefined) this.g.s.dent[i].out = 0; this.k = 0; this.g.audio.toolLoop('pliers', 0); this.g.react('normal', 0.01, 'aah'); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, ti = this.teeth()[i], d = s.dent[ti], q = toothAt(ti), w = g.head(q.x, q.y);
-    g.audio.tension(-1);
+    g.audio.toolLoop('pliers', 0);
     this.k = 0; this.wasIn = false;
     if (result.verdict === 'early') { // won't budge: it stays, rotten as ever
       d.out = 0;
-      g.react('normal', 0.6, 'aah'); g.audio.boing(0.7);
+      g.react('normal', 0.6, 'aah'); g.audio.nope();
       g.fx.text(w.x, w.y - 50, 'STUCK!', '#ffffff', 24);
       return result;
     }
@@ -306,16 +305,15 @@ export class PliersTool extends MouthTool {
     } else {
       g.fx.ring(w.x, w.y, 3, 30, 0.35, '#ffffff', 5);
       g.fx.burst(w.x, w.y, 6, 240, { size: rand(9, 14) });
-      g.audio.pop(0.8);
+      g.audio.toolHit('pliers');
       g.react('normal', 0.6, 'aah');
-      g.audio.sparkle();
     }
     g.bump(0.35);
     return result;
   }
   finish(result) {
     super.finish(result);
-    if (result.verdict === 'perfect' || result.verdict === 'good') { this.g.react('happy', 1, 'aah'); this.g.audio.sparkle(); }
+    if (result.verdict === 'perfect' || result.verdict === 'good') { this.g.react('happy', 1, 'aah'); this.g.audio.toolDone('pliers'); }
     return result;
   }
   update(dt) {
@@ -323,7 +321,7 @@ export class PliersTool extends MouthTool {
     for (const f of this.fly) { f.life += dt; f.vy += 900 * dt; f.x += f.vx * dt; f.y += f.vy * dt; f.rot += f.vr * dt; }
     this.fly = this.fly.filter((f) => f.life < 1);
   }
-  exit() { super.exit(); this.g.audio.tension(-1); }
+  exit() { super.exit(); this.g.audio.toolLoop('pliers', 0); }
   draw(ctx, time) {
     if (this.alpha < 0.01) return;
     const { g } = this, s = g.s, T = this.targets();

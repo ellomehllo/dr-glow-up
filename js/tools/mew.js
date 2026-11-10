@@ -20,26 +20,26 @@ export class MewTool extends Tool {
     const { g } = this, s = g.s;
     s.mew = this.push(p);
     s.lookAt = { x: 0, y: -80 - 60 * Math.min(1.6, s.mew) };
-    g.audio.whistle(s.mew);
+    g.audio.toolLoop('mew', 1, 0.9 + 0.18 * Math.min(1.6, s.mew));
     const inZone = this.inZone(p);
     if (inZone && !this.wasIn) g.audio.tick();
     if (inZone && Math.random() < 0.3) g.fx.spark(rand(-150, 150), rand(-200, 180), { size: rand(7, 11), life: 0.4 });
     this.wasIn = inZone;
   }
-  cancel() { this.g.s.mew = this.base; this.g.audio.whistle(-1); this.g.react('normal', 0.01); }
+  cancel() { this.g.s.mew = this.base; this.g.audio.toolLoop('mew', 0); this.g.react('normal', 0.01); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s;
-    g.audio.whistle(-1);
+    g.audio.toolLoop('mew', 0);
     s.lookAt = null;
     s.sqV -= 1.6;
     if (result.verdict === 'perfect' || result.verdict === 'good') {
-      g.audio.lock();
+      g.audio.toolDone('mew');
       const pts = [];
       for (let i = 0; i <= 10; i++) { const a = Math.PI * (0.15 + 0.7 * (i / 10)); pts.push(g.head(Math.cos(a) * 150, 60 + Math.sin(a) * 130)); }
       g.fx.along(pts, 11, { step: 0.03 });
       g.react('normal', 1.3, 'smirk');
     } else if (result.verdict === 'late') {
-      g.audio.boing(0.8);
+      g.audio.nope();
       g.react('wide', 1.3, 'o');
       const w = g.head(0, 230);
       g.fx.text(w.x + 120, w.y, 'BOING!', '#45c8ff', 28);
@@ -48,7 +48,7 @@ export class MewTool extends Tool {
     }
     return result;
   }
-  exit() { super.exit(); this.g.audio.whistle(-1); }
+  exit() { super.exit(); this.g.audio.toolLoop('mew', 0); }
   draw(ctx, time) {
     if (this.alpha < 0.01) return;
     const { g } = this, s = g.s;

@@ -73,14 +73,13 @@ export class ScrubTool extends Tool {
       const sw = g.head(from.x + rand(-30, 30), from.y + rand(-24, 24));
       g.fx.spark(sw.x, sw.y, { size: rand(9, 15), vy: -40 });
     }
-    g.audio.level('scrub', this.moving ? 0.32 : 0.05);
-    g.audio.grains.bubble = this.moving ? 14 : 0;
+    g.audio.toolLoop('scrub', this.moving ? 1 : 0.15);
     this.scrubbing = true;
   }
   lift() { this.tip = null; this.idle(); }
   idle() {
     this.scrubbing = false; this.moving = false;
-    this.g.audio.level('scrub', 0);
+    this.g.audio.toolLoop('scrub', 0);
     this.g.audio.grains.bubble = 0;
   }
   coverage() { return Math.min(1, this.nClean / (CELLS.length * DONE)); }
@@ -89,7 +88,7 @@ export class ScrubTool extends Tool {
     super.finish(result);
     const { g } = this;
     this.fading = true; this.idle();
-    g.audio.sparkle();
+    g.audio.toolDone('scrub');
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * TAU, w = g.head(Math.cos(a) * rand(40, 130), -20 + Math.sin(a) * rand(40, 160));
       g.fx.spark(w.x, w.y, { delay: i * 0.03, size: rand(12, 20), vy: -50 });

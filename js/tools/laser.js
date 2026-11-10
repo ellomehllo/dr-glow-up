@@ -90,7 +90,7 @@ export class LaserTool extends Tool {
     }
     if (!pos || onFace(to.x, to.y) || onHair(to.x, to.y)) this.env = null;
     s.lookAt = { x: to.x * 0.4, y: to.y };
-    g.audio.level('laser', 0.16);
+    g.audio.toolLoop('laser', 1);
     this.acc += dt;
     if (this.acc > 0.06) {
       this.acc = 0;
@@ -103,10 +103,10 @@ export class LaserTool extends Tool {
     this.zapped++;
     g.fx.ring(w.x, w.y, 6, 34, 0.35, '#ff9fc4', 5);
     g.fx.burst(w.x, w.y, 5, 170, { size: rand(8, 12) });
-    g.audio.zap(0.9 + Math.random() * 0.3);
+    g.audio.toolHit('laser', 0.95 + Math.random() * 0.1);
   }
   lift() { this.firing = false; this.last = null; this.heat = 0; this.env = null; this.idle(); }
-  idle() { this.g.audio.level('laser', 0); }
+  idle() { this.g.audio.toolLoop('laser', 0); }
   coverage() { const n = this.g.s.spots.length; return n ? this.zapped / n : 1; }
   complete() { return this.zapped >= this.g.s.spots.length || this.done[0]; }
   result() {
@@ -123,7 +123,7 @@ export class LaserTool extends Tool {
         const a = (i / 12) * TAU, w = g.head(Math.cos(a) * rand(50, 130), -10 + Math.sin(a) * rand(50, 150));
         g.fx.spark(w.x, w.y, { delay: i * 0.03, size: rand(11, 17), vy: -50 });
       }
-      g.audio.sparkle();
+      g.audio.toolDone('laser');
       g.react('happy', 1.1, 'grin');
     } else { g.react('normal', 1, 'wince'); }
     return result;

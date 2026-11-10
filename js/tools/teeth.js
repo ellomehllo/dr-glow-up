@@ -42,7 +42,7 @@ export class TeethTool extends Tool {
     const { g } = this, s = g.s;
     s.teeth = this.push(p);
     this.pos = guideAt(this.segs, this.tOf(p));
-    g.audio.level('hum', 0.22);
+    g.audio.toolLoop('teeth', 1);
     this.acc += dt;
     if (this.acc > 0.08) {
       this.acc = 0;
@@ -56,18 +56,17 @@ export class TeethTool extends Tool {
     this.wasIn = inZone;
   }
   cancel() { const s = this.g.s; s.teeth = this.base; this.pos = guideAt(this.segs, 0); this.idle(); this.g.react('normal', 0.01, 'grin'); }
-  idle() { this.g.audio.level('hum', 0); }
+  idle() { this.g.audio.toolLoop('teeth', 0); }
   releaseTarget(i, p, result) {
     const { g } = this;
     this.idle(); this.wasIn = false;
     const w = g.head(0, 110);
     if (result.verdict === 'perfect' || result.verdict === 'good') {
       for (let k = 0; k < 5; k++) { const q = g.head(-32 + k * 16, 108); g.fx.spark(q.x, q.y, { delay: k * 0.05, size: rand(12, 18), vy: -60 }); }
-      g.audio.shing();
+      g.audio.toolDone('teeth');
       g.react('happy', 1.2, 'grin');
     } else if (result.verdict === 'late') {
       g.fx.text(w.x + 120, w.y - 30, 'BLING!', '#45c8ff', 28);
-      g.audio.sparkle();
       g.react('squeeze', 1.1, 'grin');
     } else g.react('normal', 0.9, 'grin');
     return result;

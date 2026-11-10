@@ -30,14 +30,15 @@ export class PolishTool extends Tool {
       const w = g.head(this.pos.x + rand(-40, 40), this.pos.y + rand(-40, 40));
       g.fx.spark(w.x, w.y, { size: rand(9, 16), vy: -40 });
     }
-    g.audio.level('polish', 0.3);
+    g.audio.toolLoop('polish', 1);
     this.rubbing = true;
   }
-  idle() { this.rubbing = false; this.g.audio.level('polish', 0); }
+  idle() { this.rubbing = false; this.g.audio.toolLoop('polish', 0); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s;
     this.rubbing = false;
-    g.audio.level('polish', 0);
+    g.audio.toolLoop('polish', 0);
+    g.audio.toolDone('polish');
     s.sweep = -999; s.shine = 1; s.glow = 1;
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * TAU, w = g.head(Math.cos(a) * 175, -20 + Math.sin(a) * 215);
@@ -50,7 +51,7 @@ export class PolishTool extends Tool {
     return result;
   }
   update(dt) { super.update(dt); if (this.outro) this.fly += dt; }
-  exit() { super.exit(); this.g.audio.level('polish', 0); this.g.s.sweep = -999; }
+  exit() { super.exit(); this.g.audio.toolLoop('polish', 0); this.g.s.sweep = -999; }
   draw(ctx, time) {
     if (this.alpha < 0.01) return;
     const { g } = this, s = g.s;

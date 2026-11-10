@@ -32,7 +32,7 @@ export class CirclesTool extends Tool {
     s.circ[i] = clamp01(1 - p / sw.c);
     s.circG[i] = p > sw.c + sw.w ? clamp01((p - sw.c - sw.w) / (max - sw.c - sw.w)) : 0;
     this.press = Math.min(1, this.press + dt * 8);
-    g.audio.level('steam', 0.06);
+    g.audio.toolLoop('circles', 0.7);
     this.acc += dt;
     if (this.acc > 0.09) {
       this.acc = 0;
@@ -44,7 +44,7 @@ export class CirclesTool extends Tool {
     this.wasIn = inZone;
   }
   cancel() { const s = this.g.s; if (this.cur >= 0) { s.circ[this.cur] = 1; s.circG[this.cur] = 0; } this.idle(); this.g.react('normal', 0.01); }
-  idle() { this.g.audio.level('steam', 0); }
+  idle() { this.g.audio.toolLoop('circles', 0); }
   releaseTarget(i, p, result) {
     const { g } = this, s = g.s, t = SPOTS[i], w = g.head(t.x, t.y), side = t.x < 0 ? -1 : 1;
     this.idle(); this.wasIn = false;
@@ -53,11 +53,11 @@ export class CirclesTool extends Tool {
     if (result.verdict === 'perfect' || result.verdict === 'good') {
       s.circ[i] = 0;
       g.fx.burst(w.x, w.y, 6, 180, { size: rand(9, 14) });
-      g.audio.shing();
+      g.audio.toolDone('circles');
       g.react('happy', 0.8, 'grin');
     } else if (result.verdict === 'late') {
       g.fx.puff(w.x, w.y, 3, '150,220,120');
-      g.audio.boing(0.7);
+      g.audio.nope();
       g.react('wide', 0.9, 'o');
     } else g.react('normal', 0.8, 'flat');
     return result;

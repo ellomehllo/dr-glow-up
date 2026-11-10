@@ -27,7 +27,7 @@ export class PopTool extends Tool {
     const { g } = this, pm = g.s.pimples[this.cur];
     this.k = p / this.sw.c;
     pm.swell = Math.min(1.45, this.k);
-    g.audio.tension(this.k);
+    g.audio.toolLoop('pop', 0.4 + 0.6 * Math.min(1, this.k), 0.9 + 0.22 * Math.min(1.45, this.k));
     if (this.k > 0.7) g.shake(0.005 * this.k);
     const inZone = this.inZone(p);
     if (inZone && !this.wasIn) g.audio.tick();
@@ -36,17 +36,17 @@ export class PopTool extends Tool {
   cancel() {
     const pm = this.g.s.pimples[this.cur];
     if (pm) pm.swell = 0;
-    this.k = 0; this.g.audio.tension(-1); this.g.react('normal', 0.01);
+    this.k = 0; this.g.audio.toolLoop('pop', 0); this.g.react('normal', 0.01);
   }
   releaseTarget(i, p, result) {
     const { g } = this, pm = g.s.pimples[i], w = g.head(pm.x, pm.y);
-    g.audio.tension(-1);
+    g.audio.toolLoop('pop', 0);
     this.k = 0; this.wasIn = false;
     if (result.verdict === 'early') {
       // sinks back into a smaller, stubborn bump
       pm.deflate = true; pm.shrink = 0.35;
       g.fx.puff(w.x, w.y, 2, '255,200,210');
-      g.audio.boing(0.7);
+      g.audio.nope();
       g.react('normal', 0.7, 'wince');
       return result;
     }
@@ -55,8 +55,8 @@ export class PopTool extends Tool {
     g.fx.pop(w.x, w.y, pm.r * 1.4, null, messy);
     if (messy) { g.audio.splat(); g.react('normal', 0.8, 'wince'); }
     else {
-      g.audio.pop(1 + Math.random() * 0.3);
-      if (result.verdict === 'perfect') { g.fx.burst(w.x, w.y, 6, 200, { size: rand(10, 15) }); g.audio.sparkle(); }
+      g.audio.toolHit('pop', 0.95 + Math.random() * 0.1);
+      if (result.verdict === 'perfect') { g.fx.burst(w.x, w.y, 6, 200, { size: rand(10, 15) }); }
       g.react('wide', 0.45, 'o');
     }
     g.bump(0.35);
@@ -69,7 +69,7 @@ export class PopTool extends Tool {
       g.react('happy', 0.9, 'grin');
       g.s.flush = 1;
       for (const side of [-1, 1]) { const w = g.head(side * 96, 64); g.fx.burst(w.x, w.y, 6, 200, { size: rand(10, 16) }); }
-      g.audio.sparkle();
+      g.audio.toolDone('pop');
     } else g.react('normal', 1, 'wince');
     return result;
   }
@@ -77,7 +77,7 @@ export class PopTool extends Tool {
     super.update(dt);
     for (const pm of this.g.s.pimples) if (pm.deflate) pm.swell = Math.max(0, pm.swell - dt * 4);
   }
-  exit() { super.exit(); this.g.audio.tension(-1); }
+  exit() { super.exit(); this.g.audio.toolLoop('pop', 0); }
   draw(ctx, time) {
     if (this.alpha < 0.01 || this.outro) return;
     const { g } = this, s = g.s, P = s.pimples;

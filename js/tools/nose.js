@@ -49,7 +49,7 @@ export class NoseTool extends Tool {
     const q = side(sz), w = g.head(q.x, q.y);
     g.fx.spark(w.x + rand(-8, 8), w.y + rand(-8, 8), { size: rand(8, 13), vy: -40 });
     if (Math.random() < 0.5) g.fx.glitter(w.x, w.y, 2, 140);
-    g.audio.knock(0.9 + Math.min(1.5, s.nose) * 0.3);
+    g.audio.toolHit('nose', 0.94 + Math.min(1.5, s.nose) * 0.08);
     g.shake(0.01);
     if (Math.random() < 0.3) g.react('squeeze', 0.12, 'flat');
   }
@@ -60,7 +60,7 @@ export class NoseTool extends Tool {
     if (result.verdict === 'perfect' || result.verdict === 'good') {
       g.fx.ring(w.x, w.y, R0 * 0.8, R0 * 2.2, 0.5, COL.gold, 6);
       g.fx.burst(w.x, w.y, 7, 220, { size: rand(10, 15) });
-      g.audio.shing();
+      g.audio.toolDone('nose');
       g.react('happy', 1.1, 'grin');
     } else if (result.verdict === 'late') {
       g.audio.oink();

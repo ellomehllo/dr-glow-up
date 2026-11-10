@@ -40,6 +40,7 @@ export class ChiselTool extends Tool {
     this.pos = guideAt(this.segs, this.tOf(p));
     this.roll += dt * 9;
     s.lookAt = { x: this.pos.x * 0.6, y: this.pos.y };
+    g.audio.toolLoop('chisel', 1); // the roller's own smooth rolling while it moves
     this.tap += dt;
     if (this.tap > 0.1) {
       this.tap = 0;
@@ -47,17 +48,19 @@ export class ChiselTool extends Tool {
       g.fx.spark(w.x + rand(-10, 10), w.y + rand(-10, 10), { size: rand(8, 14), col: '#3fe0b5', vy: -40 });
       if (Math.random() < 0.5) g.fx.glitter(w.x, w.y, 2, 140);
       if (s.nick > 0) g.fx.puff(w.x, w.y, 1, '255,150,170');
-      g.audio.tink(0.6 + Math.random() * 0.2);
       g.shake(0.012);
       if (Math.random() < 0.25) g.react(s.nick > 0 ? 'squeeze' : 'happy', 0.15, 'flat');
     }
   }
-  cancel() { const s = this.g.s; s.jaw = this.base; s.nick = 0; this.pos = guideAt(this.segs, 0); }
+  idle() { this.g.audio.toolLoop('chisel', 0); }
+  exit() { super.exit(); this.idle(); }
+  cancel() { this.idle(); const s = this.g.s; s.jaw = this.base; s.nick = 0; this.pos = guideAt(this.segs, 0); }
   releaseTarget(i, p, result) {
+    this.idle();
     const { g } = this;
     if (result.verdict === 'perfect' || result.verdict === 'good') {
       g.fx.along(this.pts.filter((_, i) => i % 2 === 0).map((q) => g.head(q[0], q[1])), 12, { step: 0.025 });
-      g.audio.shing();
+      g.audio.toolDone('chisel');
       g.react('normal', 1.2, 'smirk');
     } else if (result.verdict === 'late') {
       const w = g.head(0, 180);

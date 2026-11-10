@@ -38,8 +38,7 @@ export class GoldTool extends Tool {
     const { g } = this, s = g.s, i = this.cur;
     s.scarF[i] = p;
     this.pour = Math.min(1, this.pour + dt * 6);
-    g.audio.level('pour', 0.28);
-    g.audio.grains.bloop = 7;
+    g.audio.toolLoop('gold', 1);
     this.glit += dt;
     if (this.glit > 0.07) {
       this.glit = 0;
@@ -52,7 +51,7 @@ export class GoldTool extends Tool {
         this.dripT = 0;
         const P = s.cracks[i].pts, e = P[P.length - 1];
         s.drips.push({ x: e[0] + rand(-8, 8), y: e[1], len: 0, max: rand(22, 48), v: rand(50, 90), w: rand(4, 6) });
-        if (Math.random() < 0.5) g.audio.drip();
+        if (Math.random() < 0.5) g.audio.toolHit('gold', 0.95 + Math.random() * 0.1);
       }
     }
     const inZone = this.inZone(p);
@@ -60,7 +59,7 @@ export class GoldTool extends Tool {
     this.wasIn = inZone;
   }
   cancel() { if (this.cur >= 0) this.g.s.scarF[this.cur] = 0; this.pour = 0; this.idle(); }
-  idle() { this.g.audio.level('pour', 0); this.g.audio.grains.bloop = 0; }
+  idle() { this.g.audio.toolLoop('gold', 0); this.g.audio.grains.bloop = 0; }
   releaseTarget(i, p, result) {
     const { g } = this;
     this.idle(); this.wasIn = false;
@@ -69,7 +68,7 @@ export class GoldTool extends Tool {
       const pts = [];
       for (let k = 0; k <= 6; k++) pts.push(this.front(i, k / 6));
       g.fx.along(pts, 6, { step: 0.035 });
-      g.audio.shing();
+      g.audio.toolDone('gold');
       g.react('happy', 0.9, 'grin');
     } else if (result.verdict === 'late') g.react('normal', 0.9, 'wince');
     else g.react('normal', 0.8, 'flat');
