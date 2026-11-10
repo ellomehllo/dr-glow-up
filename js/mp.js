@@ -19,9 +19,9 @@ export class Mp {
     this.skew = 0; // server clock minus ours (ms), from the last view
   }
 
-  async rpc(name, args = {}) {
+  async rpc(name, args = {}, keepalive = false) {
     if (!this.on) throw new Error('multiplayer is off');
-    return this.cloud.call('POST', `/rest/v1/rpc/${name}`, args);
+    return this.cloud.call('POST', `/rest/v1/rpc/${name}`, args, keepalive);
   }
 
   // a server view, checked; null stays null (no match yet)
@@ -60,7 +60,7 @@ export class Mp {
   }
   // call every couple of seconds while searching: a view once matched, else null
   async join() { return this.view(await this.rpc('mp_join')); }
-  leave() { return this.rpc('mp_leave'); }
+  leave(bye) { return this.rpc('mp_leave', {}, bye); }
   async state(id) { return this.view(await this.rpc('mp_state', { p_match: id })); }
   async ready(id) { return this.view(await this.rpc('mp_ready', { p_match: id })); }
   skip(id) { return this.rpc('mp_skip', { p_match: id }); }
@@ -75,7 +75,7 @@ export class Mp {
     return this.view(await this.rpc('mp_react', { p_match: id, p_kind: kind }));
   }
   async again(id) { return this.view(await this.rpc('mp_again', { p_match: id })); }
-  end(id) { return this.rpc('mp_end', { p_match: id }); }
+  end(id, bye) { return this.rpc('mp_end', { p_match: id }, bye); }
 
   // ---------- room games (2 to 4 players: make characters, then pass them round) ----------
   // a game view: { id, game: true, n, state: 'create'|'playing'|'reveal'|'over', round, rounds,
@@ -95,7 +95,7 @@ export class Mp {
     if (!REACTIONS.includes(kind)) throw new Error('bad reaction');
     return this.view(await this.rpc('mp_game_react', { p_game: id, p_kind: kind }));
   }
-  gameEnd(id) { return this.rpc('mp_game_end', { p_game: id }); }
+  gameEnd(id, bye) { return this.rpc('mp_game_end', { p_game: id }, bye); }
 
   // ---------- rooms (play with friends) ----------
   // a room: { code, role: 'host'|'guest', max, players: [{ name, ready, host, you }], game (a view, or null) }
@@ -115,7 +115,7 @@ export class Mp {
   // the room now (call every couple of seconds while in it); throws 'room closed' once it's gone
   async roomView(code) { return this.room(await this.rpc('mp_room_view', { p_code: code })); }
   async roomReady(code, ready) { return this.room(await this.rpc('mp_room_ready', { p_code: code, p_ready: !!ready })); }
-  roomLeave(code) { return this.rpc('mp_room_leave', { p_code: code }); }
+  roomLeave(code, bye) { return this.rpc('mp_room_leave', { p_code: code }, bye); }
 }
 
 // room codes: 6 characters with no look-alikes (as the database makes them)

@@ -67,8 +67,9 @@ export class Cloud {
       .finally(() => { this.sending = null; if (ok && this.want) this.flush(); });
   }
 
-  async call(method, path, body) {
-    const send = async (token) => fetch(API + path, { method, headers: headers(token), body: body ? JSON.stringify(body) : undefined });
+  // keepalive: the request outlives the page (a goodbye as the tab closes)
+  async call(method, path, body, keepalive = false) {
+    const send = async (token) => fetch(API + path, { method, headers: headers(token), body: body ? JSON.stringify(body) : undefined, keepalive });
     let r = await send(await this.token());
     if (r.status === 401) { this.session = { ...this.session, expires_at: 0 }; r = await send(await this.token()); }
     // the player behind this session is gone (removed on the server): a new one, once

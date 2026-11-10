@@ -21,6 +21,7 @@ const POLL = 1.6; // seconds between checks while waiting on the other player or
 const SEND = 0.33; // seconds between live looks during a turn
 const GRACE = 11; // seconds after the bell before handing in my own character for a partner who left
 const MAKE_GRACE = 36; // seconds after making time before giving up on a partner who never handed theirs in
+const WAIT = 45; // seconds of waiting on a partner's LET'S GO or AGAIN before taking it they're gone
 
 const hash = (t) => { let h = 5381; for (let i = 0; i < t.length; i++) h = (h * 33 + t.charCodeAt(i)) | 0; return String(h >>> 0); };
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -49,6 +50,18 @@ export class Multi {
     // keep going in a hidden tab (a host off sending the link, say)
     this.nextCheck = 0;
     setInterval(() => this.pump(), 250);
+    this.waitSince = 0;
+    // closing the tab or app: let the others know straight away, so nobody waits on us
+    addEventListener('pagehide', () => this.bye());
+    addEventListener('pageshow', (e) => { if (e.persisted && this.byeSent) location.reload(); });
+  }
+  bye() {
+    const { phase, code, match } = this;
+    if (!this.on || this.byeSent) return;
+    this.byeSent = true;
+    if (phase === 'search') this.mp.leave(true).catch(() => {});
+    if (match && match.state !== 'over') this.api.end(match.id, true).catch(() => {});
+    if (code) this.mp.roomLeave(code, true).catch(() => {});
   }
   get available() { return this.mp.on; }
 
@@ -149,8 +162,8 @@ export class Multi {
   get api() {
     const mp = this.mp;
     return this.match && this.match.game
-      ? { state: (id) => mp.gameState(id), submit: (id, l, m) => mp.gameSubmit(id, l, m), react: (id, k) => mp.gameReact(id, k), end: (id) => mp.gameEnd(id) }
-      : { state: (id) => mp.state(id), submit: (id, l, m) => mp.submit(id, l, m), react: (id, k) => mp.react(id, k), end: (id) => mp.end(id) };
+      ? { state: (id) => mp.gameState(id), submit: (id, l, m) => mp.gameSubmit(id, l, m), react: (id, k) => mp.gameReact(id, k), end: (id, bye) => mp.gameEnd(id, bye) }
+      : { state: (id) => mp.state(id), submit: (id, l, m) => mp.submit(id, l, m), react: (id, k) => mp.react(id, k), end: (id, bye) => mp.end(id, bye) };
   }
   setPhase(p) { this.phase = p; this.epoch++; this.poll = 0; this.since = performance.now(); }
 
@@ -630,6 +643,16 @@ export class Multi {
         const el = this.lobby.sheet.querySelector('.lb-count');
         if (el && el.textContent !== n) el.textContent = n;
       }
+    }
+    // I said LET'S GO or AGAIN and they never answered: they're gone (closed the app, lost signal)
+    const waiting = this.phase === 'match' && m && !m.game && ((m.state === 'preview' && m.me_ok && !m.they_ok) || (m.state === 'reveal' && m.me_again && !m.they_again));
+    if (!waiting) this.waitSince = 0;
+    else if (!this.waitSince) this.waitSince = Date.now();
+    else if (Date.now() - this.waitSince > WAIT * 1000) {
+      this.waitSince = 0;
+      this.api.end(m.id).catch(() => {});
+      this.setView({ ...m, state: 'over' });
+      return;
     }
     // made mine, and they never handed theirs in: they're gone
     if (this.phase === 'match' && m && m.state === 'create' && this.madeIn && Date.now() > m.endsAt + MAKE_GRACE * 1000) {
