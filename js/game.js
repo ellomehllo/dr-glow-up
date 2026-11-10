@@ -1320,8 +1320,7 @@ export class Game {
         this.fx.hearts(c.x, c.y - 120, 3);
         for (let i = 0; i < 2; i++) this.fx.burst(c.x + rand(-160, 160), c.y + rand(-120, 120), 6, 220);
       }
-    } else {
-      this.audio.fail();
+    } else { // a miss: no mocking sound, the shake and the sweat say it
       s.mood = Math.min(1, s.mood + 0.06);
       this.g.fail = 1;
       this.director.shake(0.3);
@@ -1363,8 +1362,9 @@ export class Game {
     this.after(0.7, () => this.waiting.react(feel));
     // how it turned out, in a word: happy ones cheer it, mid or worse ones shrug it off
     this.after(0.45, () => this.audio.say(s, feel === 'thrilled' || feel === 'pleased' ? 'happy' : 'mid'));
-    if (bad) { this.audio.fail(); this.director.shake(this.feel === 'furious' ? 0.5 : 0.25); }
-    else if (this.feel === 'meh') { s.sqV += 1.2; this.audio.boing(0.8); } // a shrug
+    // a bad or so-so job gets no jingle: the patient's own word is enough
+    if (bad) this.director.shake(this.feel === 'furious' ? 0.5 : 0.25);
+    else if (this.feel === 'meh') s.sqV += 1.2; // a shrug
     else {
       this.audio.fanfare();
       const hop = (v) => () => {
@@ -1424,7 +1424,6 @@ export class Game {
       this.director.shake(0.35);
       const big = this.passed && n + 1 === LEVELS.length;
       if ((aura >= 70 && !BAD.has(this.feel)) || big) { this.fx.confetti(window.innerWidth, big || aura >= 95 ? 150 : 80); this.audio.cheer(); }
-      else this.audio.thud();
     });
     this.splitV = 0; this.splitUser = false;
     this.setMode('results');
