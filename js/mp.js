@@ -2,7 +2,7 @@
 // supabase/migrations/20261111090000_multiplayer.sql, over the same anonymous player and
 // session as the cloud save (cloud.js). It runs where the cloud runs (doctorglowup.site,
 // or ?cloud locally). Every call returns the match as this player sees it (a "view"):
-//   { id, state: 'preview'|'playing'|'reveal'|'over', round, starts_at, ends_at, now,
+//   { id, state: 'create'|'preview'|'playing'|'reveal'|'over', round, starts_at, ends_at, now,
 //     side, partner, me_ok, they_ok, me_again, they_again,
 //     mine, theirs, mine_after, theirs_after, reactions: [{ from: 'me'|'them', kind }] }
 // mine: my character this round; theirs: the one I work on; *_after: what came of each.
@@ -47,10 +47,8 @@ export class Mp {
     const r = await this.rpc('mp_history');
     return Array.isArray(r) ? r.filter((h) => h && validLook(h.look)) : [];
   }
-  // the words names are made from: { first: [...], second: [...] }
-  nameWords() { return this.rpc('mp_name_words'); }
-  // my name, one word from each list: { name }
-  setName(first, second) { return this.rpc('mp_set_name', { p_first: first, p_second: second }); }
+  // my username (shown as @name): { name }; throws with e.msg 'bad name' | 'not allowed' | 'name taken'
+  setName(name) { return this.rpc('mp_set_name', { p_name: name }); }
   // keep the creator's character as the one I bring
   save(look) {
     if (!validLook(look)) return Promise.reject(new Error('bad look'));
@@ -72,21 +70,29 @@ export class Mp {
     if (!REACTIONS.includes(kind)) throw new Error('bad reaction');
     return this.view(await this.rpc('mp_react', { p_match: id, p_kind: kind }));
   }
+  // the character I made in the match's first 90 seconds
+  async made(id, look) {
+    if (!validLook(look)) throw new Error('bad look');
+    return this.view(await this.rpc('mp_made', { p_match: id, p_look: look }));
+  }
   async again(id) { return this.view(await this.rpc('mp_again', { p_match: id })); }
   end(id) { return this.rpc('mp_end', { p_match: id }); }
 
   // ---------- rooms (play with a friend) ----------
-  // a room for a friend to join: { code, expires_at }
-  roomCreate() { return this.rpc('mp_room_create'); }
-  // the host waits: a view once the friend is in, else null (throws once the room is gone)
-  async roomWait(code) { return this.view(await this.rpc('mp_room_wait', { p_code: code })); }
-  // join by code: a view, or throws with e.msg 'no such room' | 'room is full' | 'your own room' | 'too many tries' | 'no character'
-  async roomJoin(code) {
-    const r = await this.rpc('mp_room_join', { p_code: code });
+  // a room: { code, role: 'host'|'guest', host: { name, ready }, guest (or null), match (a view, or null) }
+  room(r) { if (r && r.match) r.match = this.view(r.match); return r; }
+  // a new room of mine
+  async roomCreate() { return this.room(await this.rpc('mp_room_create')); }
+  // into a friend's room by code: the room, or throws with e.msg 'no such room' | 'room is full' | 'your own room' | 'too many tries'
+  async roomEnter(code) {
+    const r = await this.rpc('mp_room_enter', { p_code: code });
     if (r && r.error) { const e = new Error(r.error); e.msg = r.error; throw e; }
-    return this.view(r);
+    return this.room(r);
   }
-  roomCancel(code) { return this.rpc('mp_room_cancel', { p_code: code }); }
+  // the room now (call every couple of seconds while in it); throws 'room closed' once it's gone
+  async roomView(code) { return this.room(await this.rpc('mp_room_view', { p_code: code })); }
+  async roomReady(code, ready) { return this.room(await this.rpc('mp_room_ready', { p_code: code, p_ready: !!ready })); }
+  roomLeave(code) { return this.rpc('mp_room_leave', { p_code: code }); }
 }
 
 // room codes: 6 characters with no look-alikes (as the database makes them)

@@ -659,7 +659,8 @@ export class Game {
   }
   // open the creator: the game steps aside (no HUD, no tools) and the patient in the chair
   // becomes the character being made
-  openCreator() {
+  // o: Creator.open's (o.timed: the making part of a multiplayer match)
+  openCreator(o = {}) {
     if (this.mode === 'creator') return;
     this.closeKit();
     for (const t of this.entered) { t.exit(); t.outro = false; }
@@ -671,7 +672,7 @@ export class Game {
     this.director.setObstruction(this.ui.obstruction('creator'), true);
     this.director.go(this.view({ x: 0, y: 40, r: 360, rel: true }), 0.6);
     if (!this.creator) this.creator = new Creator(document.getElementById('ui'), this);
-    this.creator.open();
+    this.creator.open(o);
   }
   // the creator closed (saved or not): back to the clinic, on the level the player was on,
   // or (?salon) straight into a salon turn on the character

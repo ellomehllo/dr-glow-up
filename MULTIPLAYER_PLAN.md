@@ -88,3 +88,13 @@ outside network calls).
    exports the live DB before a migration.
    Checks: tests/mp-test.sh runs tests/mp-api.mjs (34 checks on the live functions with
    throwaway players) and removes them with tests/mp-cleanup.sh.
+
+## Room lobby, timed making, @usernames (2026-11-10)
+- Friend rooms: opening the link puts the friend in the room at once, by name (no character
+  needed). Both see who is in and who is ready; when both press Ready the match starts with
+  90 s for each to make a character (state 'create', mp_made), then 90 s on each other's.
+  After the reveal, BACK TO THE ROOM returns both to the room for a new game. Players who stop
+  checking in drop out after 45 s; the host leaving closes the room.
+- Names are typed usernames shown as @name: 3-20 of a-z 0-9 _, unique, short blocklist.
+- Play with anyone is unchanged (character made beforehand, preview, skip/ready).
+- Migration 20261115090000_room_lobby.sql (backup: marblemaxx-backups/2026-11-10-before-room-lobby).

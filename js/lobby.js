@@ -2,7 +2,8 @@
 // bar (single player stays the game as it is; this opens multiplayer), and one sheet at the
 // bottom that shows one screen at a time:
 //   home     your name, three ways in: invite a friend, join with a code, play with anyone
-//   invite   your room code and link (copy, share), waiting for the friend
+//   room     a friend's room: its code and link, who is in, who is ready, a Ready button
+//   name     type your username (@name)
 //   join     type a friend's code
 //   search   looking for someone to play with
 //   preview  who you got: skip or ready
@@ -44,8 +45,14 @@ const NOTE = {
   'room is full': 'Someone else joined that room already.',
   'your own room': "That's your own room code.",
   'too many tries': 'Too many wrong codes. Wait a few minutes.',
-  'room closed': 'Your room closed. Make a new one.',
+  'room closed': 'The room closed.',
+  'bad name': 'Use 3 to 20 letters, numbers or _.',
+  'not allowed': "That name isn't allowed. Try another.",
+  'name taken': 'Someone has that name already. Try another.',
 };
+// a username as typed: lower case, a-z 0-9 _ only, at most 20
+export const cleanName = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+export const at = (name) => (name ? `@${name}` : 'They');
 export const noteFor = (msg, fallback = 'Something went wrong. Try again.') => NOTE[msg] || fallback;
 
 export class Lobby {
@@ -77,8 +84,9 @@ export class Lobby {
     });
     el.addEventListener('submit', (e) => {
       e.preventDefault();
-      const inp = this.sheet.querySelector('.lb-code-in');
+      const inp = this.sheet.querySelector('.lb-code-in'), nm = this.sheet.querySelector('.lb-name-in');
       if (inp) act('join-code', cleanCode(inp.value));
+      else if (nm) act('name-save', nm.value);
     });
     this.screen = null;
     // Escape: the sheet's back button, when it has one
@@ -115,8 +123,17 @@ export class Lobby {
       });
       if (!matchMedia('(pointer: coarse)').matches) inp.focus();
     }
+    if (screen === 'name') {
+      const inp = this.sheet.querySelector('.lb-name-in');
+      inp.addEventListener('input', () => {
+        const c = cleanName(inp.value);
+        if (inp.value !== c) inp.value = c;
+        this.sheet.querySelector('.lb-go').disabled = c.length < 3;
+      });
+      if (!matchMedia('(pointer: coarse)').matches) { inp.focus(); inp.select(); }
+    }
     const first = this.sheet.querySelector('.lb-main:not(:disabled)');
-    if (first && screen !== 'join' && !matchMedia('(pointer: coarse)').matches) first.focus({ preventScroll: true });
+    if (first && screen !== 'join' && screen !== 'name' && !matchMedia('(pointer: coarse)').matches) first.focus({ preventScroll: true });
   }
   // just the status line of the screen showing (no rebuild)
   say(text) { const s = this.sheet.querySelector('.lb-say'); if (s) s.textContent = text; }
@@ -131,7 +148,7 @@ export class Lobby {
     switch (screen) {
       case 'home':
         return `${head('MULTIPLAYER', 'leave')}
-          <p class="lb-who lb-me">You are <b>${esc(d.name || '...')}</b>${d.name ? `<button type="button" class="lb-x lb-pen" data-act="name" aria-label="Change your name">${LB_ICON.edit}</button>` : ''}</p>
+          <p class="lb-who lb-me">You are <b>${esc(d.name ? at(d.name) : '...')}</b>${d.name ? `<button type="button" class="lb-x lb-pen" data-act="name" aria-label="Change your name">${LB_ICON.edit}</button>` : ''}</p>
           <div class="lb-col">
             ${btn('invite', 'invite', 'INVITE A FRIEND', 'lb-main lb-pink', d.busy ? 'disabled' : '')}
             ${btn('join', 'code', 'JOIN WITH A CODE', '', d.busy ? 'disabled' : '')}
@@ -143,37 +160,46 @@ export class Lobby {
           </div>
           ${tally(d.got)}
           <p class="lb-say">${esc(d.say || '')}</p>`;
-      case 'name': {
-        const w = d.words || { first: [], second: [] };
-        const chips = (list, on, act) => list.map((x) => `<button type="button" class="lb-chip${x === on ? ' on' : ''}" data-act="${act}" data-v="${esc(x)}" aria-pressed="${x === on}">${esc(x)}</button>`).join('');
-        return `${head('NAME YOUR CHARACTER')}
-          <p class="lb-who lb-big"><b>${esc(`${d.first || ''} ${d.second || ''}`.trim() || '...')}</b></p>
-          <div class="lb-chips" role="group" aria-label="First word">${chips(w.first, d.first, 'name-first')}</div>
-          <div class="lb-chips" role="group" aria-label="Second word">${chips(w.second, d.second, 'name-second')}</div>
-          <div class="lb-row">
-            ${btn('name-dice', 'dice', 'RANDOM')}
-            ${btn('name-save', 'check', 'SAVE', 'lb-main lb-pink', d.first && d.second ? '' : 'disabled')}
-          </div>
-          <p class="lb-say${d.bad ? ' bad' : ''}">${esc(d.say || 'Pick one word from each row.')}</p>`;
-      }
+      case 'name':
+        return `${head('YOUR NAME', d.back || 'home')}
+          <form class="lb-form" autocomplete="off">
+            <label class="lb-name"><span aria-hidden="true">@</span><input class="lb-name-in" type="text" maxlength="20" autocapitalize="none" autocorrect="off" spellcheck="false"
+              aria-label="Username" placeholder="username" value="${esc(d.name || '')}"></label>
+            <button type="submit" class="lb-btn lb-main lb-pink lb-go" ${(d.name || '').length >= 3 ? '' : 'disabled'}>${LB_ICON.check}<span>SAVE</span></button>
+          </form>
+          <p class="lb-say${d.bad ? ' bad' : ''}">${esc(d.say || 'Letters, numbers and _. Everyone you play with sees it.')}</p>`;
       case 'history': {
         const h = d.item || {};
         return `${head('YOUR CHARACTER')}
           <div class="lb-row lb-hist">
             <button type="button" class="lb-x" data-act="hist" data-v="older" aria-label="Older" ${d.i >= d.n - 1 ? 'disabled' : ''}>${LB_ICON.older}</button>
-            <p class="lb-who"><b>${d.i === 0 ? 'NOW' : `${d.i} ${d.i === 1 ? 'TURN' : 'TURNS'} AGO`}</b><br>${esc(h.by ? `after ${h.by}` : 'as you made it')}</p>
+            <p class="lb-who"><b>${d.i === 0 ? 'NOW' : `${d.i} ${d.i === 1 ? 'TURN' : 'TURNS'} AGO`}</b><br>${esc(h.by ? `after ${at(h.by)}` : 'as you made it')}</p>
             <button type="button" class="lb-x" data-act="hist" data-v="newer" aria-label="Newer" ${d.i <= 0 ? 'disabled' : ''}>${LB_ICON.newer}</button>
           </div>
           <p class="lb-say">${esc(d.n > 1 ? `${d.n - 1} ${d.n === 2 ? 'player has' : 'players have'} worked on your character.` : 'No one has worked on it yet.')}</p>`;
       }
-      case 'invite':
-        return `${head('INVITE A FRIEND', 'cancel-room')}
-          ${d.code ? `<p class="lb-code" aria-label="Room code ${esc(d.code.split('').join(' '))}">${esc(d.code)}</p>
-          <div class="lb-row">
-            ${btn('copy', 'copy', d.copied ? 'COPIED' : 'COPY LINK', 'lb-main lb-pink')}
-            ${d.canShare ? btn('share', 'share', 'SHARE') : ''}
+      case 'room': {
+        const person = (p, you, host) => p
+          ? `<li class="lb-person${p.ready ? ' ready' : ''}"><i class="lb-av" aria-hidden="true">${esc(p.name[0].toUpperCase())}</i>
+              <b>${esc(at(p.name))}${you ? ' <em>YOU</em>' : ''}${host ? ' <em>HOST</em>' : ''}</b>
+              <small>${p.ready ? `${LB_ICON.check}READY` : 'NOT READY'}</small></li>`
+          : `<li class="lb-person empty"><span class="lb-spin" aria-hidden="true"></span><b>Waiting for a friend...</b></li>`;
+        const host = d.room ? d.role === 'host' : true;
+        const r = d.room || {};
+        const me = host ? r.host : r.guest, them = host ? r.guest : r.host;
+        const say = d.say || (!them ? 'Send the code or link to a friend.'
+          : me && me.ready ? `Waiting for ${at(them.name)} to be ready...`
+          : 'Ready? You each make a character in 90 seconds, then get 90 seconds on the other one.');
+        return `${head('ROOM', 'leave-room')}
+          ${d.code ? `<div class="lb-row lb-roomcode">
+            <p class="lb-code" aria-label="Room code ${esc(d.code.split('').join(' '))}">${esc(d.code)}</p>
+            <button type="button" class="lb-x" data-act="copy" aria-label="${d.copied ? 'Link copied' : 'Copy link'}">${LB_ICON[d.copied ? 'check' : 'copy']}</button>
+            ${d.canShare ? `<button type="button" class="lb-x" data-act="share" aria-label="Share link">${LB_ICON.share}</button>` : ''}
           </div>` : `<p class="lb-wait">${spin}</p>`}
-          <p class="lb-say">${esc(d.say || 'Send the code or link to a friend.')}</p>`;
+          ${d.room ? `<ul class="lb-people" aria-label="Players">${person(r.host, host, true)}${person(r.guest, !host, false)}</ul>
+          <div class="lb-row">${me && me.ready ? btn('unready', 'close', 'CANCEL READY') : btn('ready-room', 'check', 'READY', 'lb-main lb-pink', them ? '' : 'disabled')}</div>` : ''}
+          <p class="lb-say">${esc(say)}</p>`;
+      }
       case 'join':
         return `${head('JOIN A FRIEND')}
           <form class="lb-form" autocomplete="off">
@@ -195,9 +221,9 @@ export class Lobby {
             ${btn('ready', 'check', d.ready ? 'READY' : "LET'S GO", 'lb-main lb-pink', d.ready ? 'disabled' : '')}
           </div>`;
       case 'start':
-        return `<p class="lb-count" aria-live="assertive">${esc(d.n)}</p><p class="lb-say">Work on ${esc(d.partner)}'s character</p>`;
+        return `<p class="lb-count" aria-live="assertive">${esc(d.n)}</p><p class="lb-say">${esc(d.text || `Work on ${d.partner}'s character`)}</p>`;
       case 'wait':
-        return `<p class="lb-say lb-top">TIME'S UP</p><p class="lb-wait">${spin}</p><p class="lb-say">${esc(d.say || `Waiting for ${d.partner}...`)}</p>`;
+        return `<p class="lb-say lb-top">${esc(d.top || "TIME'S UP")}</p><p class="lb-wait">${spin}</p><p class="lb-say">${esc(d.say || `Waiting for ${d.partner}...`)}</p>`;
       case 'reveal': {
         const P = esc(String(d.partner || '').toUpperCase());
         const mine = d.seeing !== 'theirs';
@@ -209,12 +235,12 @@ export class Lobby {
           <p class="lb-say lb-top">${mine ? `${P} WORKED ON YOURS` : `WHAT YOU DID TO ${P}'S`}</p>
           ${mine ? `<div class="lb-row lb-rxs" role="group" aria-label="What do you think?">${rx('love')}${rx('funny')}${rx('ruined')}</div>`
             : `<p class="lb-said">${d.theirs ? `${LB_ICON[d.theirs]}<span>${esc(d.partner)}: <b>${REACT_LABEL[d.theirs]}</b></span>` : `<span>Waiting for ${esc(d.partner)} to react...</span>`}</p>`}
-          <div class="lb-row">
+          ${d.room ? `<div class="lb-row">${btn('room-again', 'again', 'BACK TO THE ROOM', 'lb-main lb-pink')}</div>` : `<div class="lb-row">
             ${btn('again', 'again', d.again ? 'WAITING' : 'AGAIN', '', d.again ? 'disabled' : '')}
             ${btn('next', 'next', 'NEXT', 'lb-main lb-pink')}
-          </div>
+          </div>`}
           <div class="lb-row lb-small">${btn('home', 'close', 'LEAVE', 'lb-ghost')}</div>
-          <p class="lb-say">${esc(d.say || (d.theyAgain ? `${d.partner} wants to go again.` : mine && !d.mine ? 'What do you think?' : mine ? 'Your character keeps this look for the next player.' : `${d.partner} keeps this look for their next player.`))}</p>`;
+          <p class="lb-say">${esc(d.say || (d.room ? 'Back in the room you can play a new game.' : d.theyAgain ? `${d.partner} wants to go again.` : mine && !d.mine ? 'What do you think?' : mine ? 'Your character keeps this look for the next player.' : `${d.partner} keeps this look for their next player.`))}</p>`;
       }
       case 'note':
         return `${head(d.title || 'MULTIPLAYER', d.back || 'home')}

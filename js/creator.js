@@ -64,6 +64,7 @@ export class Creator {
           <button class="mk-btn mk-x" data-act="close" aria-label="Back">${ICON.close}</button>
           <button class="mk-btn mk-dice" data-act="dice" aria-label="Random character">${ICON.dice}</button>
           <button class="mk-btn mk-clean" data-act="clean" aria-label="Start clean">${ICON.clean}</button>
+          <span class="mk-time" role="timer" aria-label="Time left" hidden></span>
           <button class="mk-btn mk-done" data-act="done" aria-label="Done">${ICON.done}<span>DONE</span></button>
         </div>
       </div>`;
@@ -87,8 +88,26 @@ export class Creator {
   static saved() {
     try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); return v && v.picks && v.look ? v : null; } catch { return null; }
   }
-  open() {
+  // o.timed: { endsAt (ms, our clock), done(look, or null: they quit) }: the making part of a
+  // multiplayer match. A clock runs; at 0 (or DONE) the character goes in as it is.
+  open(o = {}) {
     const sv = Creator.saved();
+    this.timed = o.timed || null;
+    clearInterval(this.clock);
+    const time = this.el.querySelector('.mk-time');
+    time.hidden = !this.timed;
+    this.el.classList.toggle('timed', !!this.timed);
+    if (this.timed) {
+      const tick = () => {
+        const left = Math.max(0, Math.ceil((this.timed.endsAt - Date.now()) / 1000));
+        const t = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+        if (time.textContent !== t) time.textContent = t;
+        time.classList.toggle('low', left <= 10);
+        if (left <= 0) this.close(true);
+      };
+      tick();
+      this.clock = setInterval(tick, 250);
+    }
     this.tool = null; this.held = false;
     if (sv) {
       this.picks = { ...sv.picks }; this.pseed = sv.pseed;
@@ -186,15 +205,29 @@ export class Creator {
     this.opts.innerHTML = html;
     this.opts.dataset.kind = id === 'tools' ? 'tools' : id === 'skin' || id === 'hair' || id === 'eyes' ? 'dots' : 'chips';
   }
+  // put away without a word to anyone (multiplayer cut the making time short)
+  dismiss() {
+    if (!this.on) return;
+    this.timed = null; this.on = false; this.held = false; this.tool = null;
+    clearInterval(this.clock);
+    document.body.classList.remove('mk-on');
+    this.el.classList.remove('in');
+  }
   // done: keep the character (picks to edit later, the look to bring to the salon); back: as it was
   close(save) {
+    if (!this.on) return;
+    let look = null;
     if (save) {
-      const look = this.game.lookNow();
+      look = this.game.lookNow();
       try { localStorage.setItem(KEY, JSON.stringify({ picks: this.picks, pseed: this.pseed, look })); } catch { /* not saved */ }
     }
     this.on = false; this.held = false; this.tool = null;
+    clearInterval(this.clock);
     document.body.classList.remove('mk-on');
     this.el.classList.remove('in');
+    const timed = this.timed;
+    this.timed = null;
+    if (timed) { timed.done(look); return; }
     this.game.closeCreator();
     if (save) this.game.ui.toast('CHARACTER SAVED');
   }

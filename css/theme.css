@@ -606,15 +606,40 @@
 .lb-me { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .lb-pen { width: 32px; height: 32px; border-radius: 11px; }
 .lb-pen .lb-i { width: 17px; height: 17px; }
-.lb-chips {
-  display: flex; gap: 6px; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: none;
-  margin: 0 -14px; padding: 4px 14px; scroll-padding: 0 14px;
+/* your username, typed after an @ */
+.lb-name {
+  flex: 1; min-width: 0; height: 52px; display: flex; align-items: center; gap: 2px; padding: 0 14px; border-radius: 16px;
+  border: 1px solid rgba(58, 39, 71, .18); background: #fff; cursor: text;
 }
-.lb-chips::-webkit-scrollbar { display: none; }
-.lb-chip {
-  flex: none; height: 38px; padding: 0 14px; border-radius: 12px; border: 1px solid transparent; cursor: pointer;
-  font: 600 15px/1 Fredoka, system-ui, sans-serif; color: var(--ink-2); background: #fff; box-shadow: var(--sh-1);
-  -webkit-tap-highlight-color: transparent; transition-property: background-color, color; transition-duration: .15s; transition-timing-function: ease-out;
+.lb-name:focus-within { outline: 2px solid var(--sky); outline-offset: 2px; }
+.lb-name span { font-size: 22px; font-weight: 700; color: var(--pink); }
+.lb-name input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; padding: 0; background: transparent; font: 600 22px/1 Fredoka, system-ui, sans-serif; color: var(--ink); }
+.lb-name input::placeholder { color: rgba(58, 39, 71, .25); }
+/* the room: its code, and who is in */
+.lb-roomcode { align-items: center; justify-content: center; }
+.lb-roomcode > * { flex: none; }
+.lb-roomcode .lb-code { font-size: 32px; margin: 0 6px 0 0; }
+.lb-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lb-person {
+  display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px 0 10px; border-radius: 16px;
+  border: 1px solid transparent; background: #fff; box-shadow: var(--sh-1); text-align: left;
 }
-.lb-chip.on { color: #fff; background: var(--pink); box-shadow: 0 0 0 1px rgba(255, 116, 177, .3), 0 4px 10px rgba(255, 116, 177, .3); }
-.lb-chip:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.lb-person b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 600; }
+.lb-person em { font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
+.lb-person small { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
+.lb-person small .lb-i { width: 16px; height: 16px; stroke-width: 2.6; }
+.lb-person.ready small { color: #23885c; }
+.lb-av {
+  width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  font-style: normal; font-size: 16px; font-weight: 700; color: #fff; background: linear-gradient(180deg, #ff8cc2, var(--pink));
+}
+.lb-person.empty { background: transparent; box-shadow: none; border: 1.5px dashed rgba(58, 39, 71, .2); color: var(--muted); }
+.lb-person.empty b { font-weight: 500; color: var(--muted); }
+.lb-person .lb-spin { width: 24px; height: 24px; border-width: 3px; margin: 0 5px; }
+/* the clock while making a character in a match */
+.mk-time {
+  min-width: 76px; height: 48px; display: inline-grid; place-items: center; padding: 0 10px; border-radius: 16px;
+  background: #fff; box-shadow: var(--sh-1); font: 700 20px/1 Fredoka, system-ui, sans-serif; font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.mk-time[hidden] { display: none; }
+.mk-time.low { color: #d94a6b; }
