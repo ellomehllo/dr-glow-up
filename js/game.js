@@ -223,7 +223,9 @@ export class Game {
     return def;
   }
   // unlocked: reached by the player (any level opened so far)
-  isOpen(id) { return INTRO[id] < Math.max(this.progress.unlocked, this.level + 1); }
+  isOpen(id) { return this.allTools || INTRO[id] < Math.max(this.progress.unlocked, this.level + 1); }
+  // a multiplayer turn: every tool is there, whatever level the player reached
+  get allTools() { return !!(this.salon && this.salon.o && this.salon.o.mp); }
 
   view(v) { return { x: v.x || 0, y: v.y + (v.rel ? headBase(this.s) : 0), r: v.r }; }
   // where the camera goes for a tool: the mouth tools (teeth, lipstick) zoom in on the
@@ -293,7 +295,7 @@ export class Game {
       // need: this patient needs it; done: needed and done; free: not needed (both can be
       // used freely); now: the one out
       let state = 'need';
-      if (INTRO[id] >= reached) state = 'locked';
+      if (!this.allTools && INTRO[id] >= reached) state = 'locked';
       else if (this.tool && this.tool.def.id === id) state = 'now';
       else if (i < 0) state = 'free';
       else if (this.used.has(i)) state = 'done';
@@ -782,6 +784,7 @@ export class Game {
     this.fx.clear(); this.audio.stopLoops();
     this.ui.reset(); this.ui.titleCard(false);
     this.splitV = 0;
+    this.pair = null;
     this.belowFn = below || null;
     if (look) {
       this.setup = { level: this.level, who: look.who, tools: [], pimples: [], wish: null, extras: [], cracks: [], seed: 11, dirt: 0, jaw0: 0 };
@@ -809,6 +812,44 @@ export class Game {
   reframeReveal() {
     this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()));
     if (this.mode === 'reveal') this.ui.layoutSplit(this.director.obsGoal);
+  }
+  // both characters as they came out, side by side: [{ look, title, by }, ...] (two)
+  pairLooks(items, below) {
+    this.showLook(null, below);
+    this.pair = items.map((it) => {
+      const r = fromLook(it.look), dirt = new Dirt();
+      dirt.setup(r.setup); dirt.applyWiped(r.wiped);
+      return { s: r.s, dirt, title: it.title, by: it.by };
+    });
+  }
+  drawPair(ctx, W, H, time) {
+    const f = this.director.free, n = this.pair.length, w = f.w / n;
+    this.pair.forEach((p, i) => {
+      const x = f.x + w * i;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x, f.y, w, f.h); ctx.clip();
+      const k = Math.min((f.h - 56) / 700, w / 470), c = headToStage(p.s, 0, 10);
+      ctx.translate(x + w / 2, f.y + (f.h - 56) * 0.5); ctx.scale(k, k); ctx.translate(-c.x, -c.y);
+      drawPatient(ctx, p.s, time, p.dirt.canvas);
+      ctx.restore();
+      // whose, and who worked on it
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = '700 13px Fredoka, system-ui, sans-serif';
+      const t1 = p.title.toUpperCase(), t2 = p.by;
+      const tw = Math.min(w - 12, Math.max(ctx.measureText(t1).width, (ctx.font = '500 12px Fredoka, system-ui, sans-serif', ctx.measureText(t2).width)) + 22);
+      const cx = x + w / 2, y = f.y + f.h - 50;
+      ctx.beginPath(); ctx.roundRect(cx - tw / 2, y, tw, 40, 14); ctx.fillStyle = 'rgba(58,39,71,.8)'; ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 13px Fredoka, system-ui, sans-serif'; ctx.fillText(t1, cx, y + 17, tw - 12);
+      ctx.fillStyle = 'rgba(255,255,255,.8)';
+      ctx.font = '500 12px Fredoka, system-ui, sans-serif'; ctx.fillText(t2, cx, y + 32, tw - 12);
+      ctx.restore();
+    });
+    if (n > 1) { // a thin line between them
+      ctx.save(); ctx.strokeStyle = 'rgba(58,39,71,.14)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(f.x + w, f.y + 24); ctx.lineTo(f.x + w, f.y + f.h - 70); ctx.stroke(); ctx.restore();
+    }
   }
   // my character before and after the other player's turn on it
   revealLooks(before, after, below) {
@@ -1548,6 +1589,7 @@ export class Game {
     tickPatient(s, dt, time);
     if (this.mode === 'results' || this.mode === 'reveal') tickPatient(this.before, dt, time);
     if (this.live && this.live.s) tickPatient(this.live.s, dt, time);
+    if (this.pair) for (const p of this.pair) tickPatient(p.s, dt, time);
     if (this.multi) this.multi.update(dt);
     this.waiting.update(dt, time);
     this.backdrop.update(dt);
@@ -1585,6 +1627,9 @@ export class Game {
       ctx.save(); ctx.beginPath(); ctx.rect(0, 0, sx, H); ctx.clip();
       d.apply(ctx); drawPatient(ctx, this.before, time, this.beforeDirt || this.dirt.start);
       ctx.restore();
+    } else if (this.pair && this.mode === 'lobby') {
+      this.splitScreenPx = -1;
+      this.drawPair(ctx, W, H, time);
     } else {
       this.splitScreenPx = -1;
       ctx.save(); d.apply(ctx); drawPatient(ctx, s, time, this.dirt.canvas); ctx.restore();

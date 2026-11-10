@@ -416,7 +416,7 @@ export class Multi {
       if (this.shown !== key) {
         this.shown = key;
         this.turn = key;
-        this.seeing = 'mine';
+        this.seeing = 'both';
         if (this.game.salon) this.game.leaveSalon();
         if (this.me && v.mine_after) { this.me.look = v.mine_after; this.me.gen = (this.me.gen || 0) + 1; } // what I bring next
         this.showReveal(true);
@@ -442,16 +442,27 @@ export class Multi {
       again: v.me_again, theyAgain: v.they_again,
     });
     if (relook) {
-      const [a, b] = this.seeing === 'theirs' ? [v.theirs, v.theirs_after] : [v.mine, v.mine_after];
       this.seated = null;
-      if (a && b) this.game.revealLooks(a, b, this.below);
+      const P = at(v.partner);
+      if (this.seeing === 'both') {
+        if (v.mine_after && v.theirs_after) {
+          this.game.pairLooks([
+            { look: v.mine_after, title: 'Yours', by: `by ${P}` },
+            { look: v.theirs_after, title: `${P}'s`, by: 'by you' },
+          ], this.below);
+          this.game.frameLook(true);
+        }
+      } else {
+        const [a, b] = this.seeing === 'theirs' ? [v.theirs, v.theirs_after] : [v.mine, v.mine_after];
+        if (a && b) this.game.revealLooks(a, b, this.below);
+      }
     }
-    this.game.reframeReveal();
+    if (this.seeing === 'both') this.game.frameLook(); else this.game.reframeReveal();
   }
   // switch the reveal between my character and theirs
   see(which) {
     if (!this.match || this.match.state !== 'reveal' || which === this.seeing) return;
-    this.seeing = which === 'theirs' ? 'theirs' : 'mine';
+    this.seeing = ['both', 'mine', 'theirs'].includes(which) ? which : 'both';
     this.showReveal(true);
   }
   // making my character, on the clock (the creator, timed)

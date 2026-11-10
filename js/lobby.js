@@ -226,13 +226,12 @@ export class Lobby {
         return `<p class="lb-say lb-top">${esc(d.top || "TIME'S UP")}</p><p class="lb-wait">${spin}</p><p class="lb-say">${esc(d.say || `Waiting for ${d.partner}...`)}</p>`;
       case 'reveal': {
         const P = esc(String(d.partner || '').toUpperCase());
-        const mine = d.seeing !== 'theirs';
+        const see = d.seeing || 'both', mine = see !== 'theirs', tab = (v, label) => `<button type="button" role="tab" data-act="see" data-v="${v}" aria-selected="${see === v}" class="${see === v ? 'on' : ''}">${label}</button>`;
         const rx = (k) => `<button type="button" class="lb-btn lb-rx${d.mine === k ? ' on' : ''}" data-act="react" data-v="${k}" aria-pressed="${d.mine === k}">${LB_ICON[k]}<span>${REACT_LABEL[k]}</span></button>`;
         return `<div class="lb-seg" role="tablist" aria-label="Whose character">
-            <button type="button" role="tab" data-act="see" data-v="mine" aria-selected="${mine}" class="${mine ? 'on' : ''}">YOURS</button>
-            <button type="button" role="tab" data-act="see" data-v="theirs" aria-selected="${!mine}" class="${mine ? '' : 'on'}">THEIRS</button>
+            ${tab('both', 'BOTH')}${tab('mine', 'YOURS')}${tab('theirs', 'THEIRS')}
           </div>
-          <p class="lb-say lb-top">${mine ? `${P} WORKED ON YOURS` : `WHAT YOU DID TO ${P}'S`}</p>
+          <p class="lb-say lb-top">${see === 'both' ? `HOW DID ${P} DO ON YOURS?` : mine ? `${P} WORKED ON YOURS` : `WHAT YOU DID TO ${P}'S`}</p>
           ${mine ? `<div class="lb-row lb-rxs" role="group" aria-label="What do you think?">${rx('love')}${rx('funny')}${rx('ruined')}</div>`
             : `<p class="lb-said">${d.theirs ? `${LB_ICON[d.theirs]}<span>${esc(d.partner)}: <b>${REACT_LABEL[d.theirs]}</b></span>` : `<span>Waiting for ${esc(d.partner)} to react...</span>`}</p>`}
           ${d.room ? `<div class="lb-row">${btn('room-again', 'again', 'BACK TO THE ROOM', 'lb-main lb-pink')}</div>` : `<div class="lb-row">
