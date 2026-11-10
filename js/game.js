@@ -327,7 +327,7 @@ export class Game {
   }
   syncKit() { this.ui.kitButton({ on: PLAYING.has(this.mode), busy: !this.canPick(), call: this.mode === 'pick' }); }
   openKit() {
-    if (!this.canPick()) { this.ui.shake(); this.audio.tink(0.5); return; }
+    if (!this.canPick()) { this.ui.shake(); this.audio.nope(); return; }
     if (this.mode === 'intro' || this.mode === 'arrive') this.toPick();
     this.refreshKit();
     this.ui.openKit();
@@ -387,7 +387,7 @@ export class Game {
       t: colour ? s[id].t : 0, cost: pierceCost(s), count: this.styleCount(id),
     });
     this.ui.markNext(-1);
-    this.audio.whoosh(0.1);
+    this.audio.pick();
     this.setMode('style');
     this.refreshKit();
     return true;
@@ -949,7 +949,7 @@ export class Game {
     this.ui.showTool(def, i);
     this.ui.markNext(-1);
     this.ui.hidePrompt();
-    this.audio.whoosh(0.12);
+    this.audio.pick();
     this.setMode('transition');
     this.refreshKit();
   }
@@ -1217,7 +1217,7 @@ export class Game {
   miss(q) {
     if (this.tool) this.tool.nudge = 1;
     this.fx.ring(q.sx, q.sy, 8, 46, 0.35, '#ff9fb8', 5);
-    this.audio.tink(0.5);
+    this.audio.nope();
   }
   startHold(i) {
     const tool = this.tool, def = tool.def;
@@ -1308,7 +1308,7 @@ export class Game {
     this.ui.stamp(r.score, good ? r.verdict : 'fail', r.free && !good ? 'over' : r.verdict, scored);
     if (good) {
       if (r.verdict !== 'perfect') this.audio.success();
-      this.after(0.25, () => this.audio.say(s, r.verdict === 'perfect' ? 'great' : 'good')); // it feels good
+      this.after(0.25, () => this.audio.say(s, r.verdict === 'perfect' && Math.random() < 0.35 ? 'great' : 'good')); // it feels good; 'perfect!' only now and then
       s.mood = Math.min(1, s.mood + 0.27);
       this.g.hit = 1;
       this.director.bump(1);

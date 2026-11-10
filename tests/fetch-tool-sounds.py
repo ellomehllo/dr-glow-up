@@ -11,8 +11,8 @@ src = sys.argv[1]
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out = os.path.join(root, 'sounds', 'tool'); raw = os.path.join(src, 'raw')
 os.makedirs(out, exist_ok=True); os.makedirs(raw, exist_ok=True)
-MAX = {'hit': 0.9, 'done': 1.6, 'tick': 0.3, 'success': 1.4, 'nope': 0.8}
-LOUD = {'loop': -26, 'hit': -21, 'done': -21, 'tick': -24, 'success': -21, 'nope': -22}
+MAX = {'hit': 0.9, 'done': 1.6, 'tick': 0.3, 'success': 1.4, 'nope': 0.8, 'perfect': 1.6, 'pick': 0.5, 'yay': 1.8}
+LOUD = {'loop': -26, 'hit': -21, 'done': -21, 'tick': -24, 'success': -21, 'nope': -22, 'perfect': -22, 'pick': -26, 'yay': -22}
 XF = 0.35  # loop crossfade, seconds
 
 def ff(*a):

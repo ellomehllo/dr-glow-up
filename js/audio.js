@@ -4,7 +4,7 @@
 // Nothing starts until the first user gesture calls init(); with ?debug (automated
 // checks) init is a no-op and nothing plays.
 const SFX = ['pop', 'splat', 'boing', 'tink', 'nick', 'shing', 'sparkle', 'lock', 'zap', 'knock', 'oink', 'drip',
-  'tick', 'stamp', 'success', 'perfect', 'fail', 'cheer', 'thud', 'flash']; // fanfare is synth bells now
+  'tick', 'stamp', 'success', 'perfect', 'fail', 'cheer', 'thud', 'flash']; // success, perfect and fanfare play blobs from sounds/tool
 const PITCHED = new Set(['pop', 'boing', 'tink', 'zap', 'knock']); // first argument is a pitch
 // recorded clips are mastered loud; these keep them under the music and the voices
 const SFX_VOL = { pop: 0.26, splat: 0.28, boing: 0.18, tink: 0.14, nick: 0.24, shing: 0.13, sparkle: 0.15, lock: 0.24, zap: 0.16,
@@ -20,9 +20,9 @@ const FEMALE = new Set(['goth', 'punk', 'glam', 'foodie']), MALE = new Set(['bod
 // what a character says, by moment: hurt, did something they didn't ask for, and how the session turned out
 // good / great: a treatment that went well, during the session
 // hurt -> sore -> angry as the same patient keeps getting hurt (see Game.ouch)
-const LINES = { hurt: ['ouch', 'ow', 'stop'], sore: ['hurts', 'careful', 'stop'], angry: ['what', 'crazy', 'letgo'], wait: ['wait', 'hey'], good: ['yes', 'better', 'ahh'], great: ['wow', 'perfect'],
+const LINES = { hurt: ['ouch', 'ow', 'stop'], sore: ['hurts', 'careful', 'stop'], angry: ['what', 'crazy', 'letgo'], wait: ['wait', 'hey'], good: ['yes', 'better', 'ahh'], great: ['wow', 'wow', 'perfect'],
   happy: ['aha', 'mmhmm', 'nice'], mid: ['hmm', 'meh'] };
-const COOL = { hurt: 1.4, sore: 1.6, angry: 1.8, wait: 4, good: 2, great: 2, happy: 0, mid: 0 };
+const COOL = { hurt: 1.4, sore: 1.6, angry: 1.8, wait: 4, good: 2, great: 8, happy: 0, mid: 0 };
 function voiceOf(who) {
   const seed = (who && who.seed) || 0, k = who && who.kind;
   const g = FEMALE.has(k) ? 'f' : MALE.has(k) ? 'm' : (seed >> 3) % 2 ? 'f' : 'm';
@@ -33,10 +33,10 @@ function voiceOf(who) {
 const TOOL_LOOP = ['scrub', 'pop', 'chisel', 'mew', 'rasp', 'gold', 'polish', 'circles', 'laser', 'teeth', 'iron', 'tweeze', 'tbrush', 'drill', 'pliers'];
 const TOOL_HIT = ['pop', 'gold', 'nose', 'laser', 'tweeze', 'pliers'];
 const TOOL_DONE = ['scrub', 'pop', 'chisel', 'mew', 'rasp', 'gold', 'polish', 'nose', 'circles', 'laser', 'teeth', 'iron', 'tweeze', 'tbrush', 'drill', 'pliers'];
-const TOOL_CLIPS = [...TOOL_LOOP.map((t) => t + '-loop'), ...TOOL_HIT.map((t) => t + '-hit'), ...TOOL_DONE.map((t) => t + '-done'), 'tick', 'success', 'nope'];
+const TOOL_CLIPS = [...TOOL_LOOP.map((t) => t + '-loop'), ...TOOL_HIT.map((t) => t + '-hit'), ...TOOL_DONE.map((t) => t + '-done'), 'tick', 'success', 'nope', 'perfect', 'pick', 'yay'];
 // the synth loop each tool falls back to until its recording loads
 const LOOP_FALLBACK = { scrub: 'scrub', tbrush: 'scrub', rasp: 'rasp', gold: 'pour', polish: 'polish', circles: 'steam', iron: 'steam', laser: 'laser', teeth: 'hum', drill: 'hum' };
-const TOOL_VOL = { loop: 0.9, hit: 0.55, done: 0.55, tick: 0.5, success: 0.5, nope: 0.5 };
+const TOOL_VOL = { loop: 1.45, hit: 0.85, done: 0.85, tick: 0.5, success: 0.5, nope: 0.5, perfect: 0.5, pick: 0.5, yay: 0.5 };
 // per-clip level trims in dB, measured so each sits at (or under) the level of the old sound it replaces
 const TRIM = {
   'scrub-loop': -4.5, 'pop-loop': -7, 'chisel-loop': -17.5, 'mew-loop': -13, 'rasp-loop': -5.5, 'gold-loop': -5.5, 'polish-loop': 0,
@@ -44,7 +44,7 @@ const TRIM = {
   'pop-hit': -1, 'gold-hit': -13.5, 'nose-hit': 5, 'laser-hit': 4, 'tweeze-hit': -11.5, 'pliers-hit': -14,
   'scrub-done': -4, 'pop-done': -5, 'chisel-done': -8, 'mew-done': -13, 'rasp-done': -16, 'gold-done': -10, 'polish-done': -9.5, 'nose-done': -11,
   'circles-done': 4, 'laser-done': -14, 'teeth-done': 3, 'iron-done': 3, 'tweeze-done': -16, 'tbrush-done': -12.5, 'drill-done': -2, 'pliers-done': -6,
-  tick: -8.5, success: 0, nope: -16 };
+  tick: -8.5, success: -4, nope: -16, perfect: -14.5, pick: -22, yay: -3 };
 const trim = (n) => Math.pow(10, (TRIM[n] || 0) / 20);
 const base = new URL('../sounds/', import.meta.url);
 // loudness of a clip, ENV_RATE steps a second, 0..1 (drives the talking mouth)
@@ -119,11 +119,14 @@ export class Sound {
   toolHit(id, pitch = 1) { if (!this._tool(id + '-hit', 'hit', pitch)) this.tick(); }
   // the tool's job is done: its own sound (no more shared metal swish on every tool)
   toolDone(id) { if (!this._tool(id + '-done', 'done')) this.sparkle(); }
+  // a tool picked up: a soft cloth swish (instead of a noise sweep)
+  pick() { if (!this._tool('pick', 'pick')) this.whoosh(0.06); }
   // gentle "not yet / not there" (instead of cartoon boings)
   nope() { if (!this._tool('nope', 'nope')) this._tone(300, this._t, 0.18, 0.05, 'sine', 220, 0.1); }
   _loadSfx() { for (const n of SFX) this._load(new URL(`sfx/${n}.mp3`, base)).then((b) => { this.buf[n] = b; }, () => {}); }
   _sample(n, pitch) {
-    if ((n === 'tick' || n === 'success') && this.tbuf[n]) return this._tool(n, n);
+    if (n === 'success' || n === 'perfect') return this._tool(n, n);
+    if (n === 'tick' && this.tbuf[n]) return this._tool(n, n);
     const b = this.buf[n]; if (!b) return false;
     const t = this.ctx.currentTime;
     if (t - (this.last[n] || -1) < 0.12) return true; // the same clip stacked up just gets louder and harsher
@@ -144,12 +147,18 @@ export class Sound {
     if (!this.ctx || this.muted || !LINES[what]) return;
     const t = this.ctx.currentTime;
     if (t < this.voiceUntil || t < (this.lineAt[what] || 0)) return;
-    const v = voiceOf(s && s.who), opts = LINES[what], word = opts[(Math.random() * opts.length) | 0], key = `${v}-${word}`;
+    const v = voiceOf(s && s.who), opts = LINES[what];
+    // never the same word twice in a row
+    let word = opts[(Math.random() * opts.length) | 0];
+    if (opts.length > 1 && word === this.lastWord) word = opts.find((w) => w !== word);
+    // the big 'perfect!' at most once a patient; otherwise 'wow'
+    if (word === 'perfect') { if (this.perfectFor === (s && s.who)) word = 'wow'; else this.perfectFor = s && s.who; }
+    const key = `${v}-${word}`;
     const b = this.vbuf[key];
     if (!b) { this.prepVoice(s && s.who); return; }
     const rate = s && s.who && s.who.kind === 'grandpa' ? 0.92 : 1;
     this.voiceUntil = t + b.duration / rate + 0.25;
-    this.lineAt[what] = t + COOL[what];
+    this.lineAt[what] = t + COOL[what]; this.lastWord = word;
     const src = this.ctx.createBufferSource(); src.buffer = b; src.playbackRate.value = rate;
     const g = this.ctx.createGain(); g.gain.value = 0.85;
     src.connect(g).connect(this.voiceBus); src.start(t);
@@ -511,34 +520,27 @@ export class Sound {
     this._tone(260, t, 0.12, 0.2, 'sine', 120, 0.1);
     this._burst(t, 0.03, 0.2, 'highpass', 1500, 0.8, 0.05);
   }
-  success() {
-    if (!this.ctx) return; const t = this._t;
-    this._tone(1046.5, t + 0.02, 0.2, 0.1, 'triangle', null, 0.3);
-    this._tone(1568, t + 0.11, 0.35, 0.1, 'triangle', null, 0.35);
+  // a soft blob bloop: a sine that drops in pitch, for the goofy reward sounds
+  _blob(f, at, vol = 0.06) {
+    const ctx = this.ctx, o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f * 1.5, at); o.frequency.exponentialRampToValueAtTime(f * 0.8, at + 0.14);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.2);
+    o.connect(g); this._out(g, 0.1); o.start(at); o.stop(at + 0.25);
   }
-  perfect() {
-    if (!this.ctx) return; const t = this._t + 0.12;
-    [1046.5, 1318.5, 1568, 2093].forEach((f, i) => this._tone(f, t + i * 0.06, 0.4, 0.06, 'triangle', null, 0.45));
-  }
+  success() { if (!this.ctx) return; this._blob(330, this._t); }
+  perfect() { if (!this.ctx) return; const t = this._t + 0.05; this._blob(294, t); this._blob(392, t + 0.14); }
   fail() {
     // cartoon "wah-wah"
     if (!this.ctx) return; const t = this._t;
     this._tone(330, t, 0.26, 0.13, 'triangle', 300, 0.2);
     this._tone(262, t + 0.28, 0.5, 0.13, 'triangle', 220, 0.25);
   }
-  // a good job: soft rising bells (C E G C) with a warm chord under them, no brass
+  // a good ending: goofy happy blobs (recorded), or synth bloops rising until it loads; no bells
   fanfare() {
-    if (!this.ctx) return; const ctx = this.ctx, t = this._t;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; lp.Q.value = 0.3;
-    const bus = ctx.createGain(); bus.gain.value = 0.2; bus.connect(lp); this._out(lp, 0.3);
-    const note = (f, at, vol, len) => {
-      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
-      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.025); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
-      o.connect(g).connect(bus); o.start(at); o.stop(at + len + 0.05);
-    };
-    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => note(f, t + i * 0.14, 0.22, 1.2));
-    [261.63, 329.63, 392.0].forEach((f) => note(f, t + 0.42, 0.08, 1.6));
+    if (!this.ctx || this._tool('yay', 'yay')) return;
+    [262, 330, 392, 523].forEach((f, i) => this._blob(f, this._t + i * 0.13));
   }
+
 
   cheer() {
     if (!this.ctx) return; const t = this._t;
