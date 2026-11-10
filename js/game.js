@@ -1305,6 +1305,7 @@ export class Game {
     this.ui.stamp(r.score, good ? r.verdict : 'fail', r.free && !good ? 'over' : r.verdict, scored);
     if (good) {
       if (r.verdict !== 'perfect') this.audio.success();
+      this.after(0.25, () => this.audio.say(s, r.verdict === 'perfect' ? 'great' : 'good')); // it feels good
       s.mood = Math.min(1, s.mood + 0.27);
       this.g.hit = 1;
       this.director.bump(1);

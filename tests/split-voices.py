@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # Downloads each voice take (takes.tsv: name<TAB>url, one take = the words below with
 # pauses between) and cuts it at the pauses into sounds/voice/<name>-<word>.mp3.
-# Usage: python3 -I tests/split-voices.py <dir with takes.tsv>
+# Usage: python3 -I tests/split-voices.py <dir with takes.tsv> [word,word,...]  (one dir per set of words)
 import os, re, subprocess, sys, urllib.request
 WORDS = ['ouch', 'ow', 'stop', 'wait', 'hey', 'aha', 'mmhmm', 'nice', 'hmm', 'meh']
-src = sys.argv[1]; root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src = sys.argv[1]
+if len(sys.argv) > 2: WORDS = sys.argv[2].split(',')
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out = os.path.join(root, 'sounds', 'voice'); raw = os.path.join(src, 'raw'); os.makedirs(raw, exist_ok=True); os.makedirs(out, exist_ok=True)
 def ff(*a): return subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', *a], capture_output=True, text=True)
 def segments(f, db):

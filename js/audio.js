@@ -16,8 +16,10 @@ const STINGER = new Set(['success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud
 const VOICES = { m: ['m1', 'm2', 'm3'], f: ['f1', 'f2', 'f3'] };
 const FEMALE = new Set(['goth', 'punk', 'glam', 'foodie']), MALE = new Set(['bodybuilder', 'bookworm', 'brainiac', 'bully', 'gamer', 'grandpa']);
 // what a character says, by moment: hurt, did something they didn't ask for, and how the session turned out
-const LINES = { hurt: ['ouch', 'ow', 'stop'], wait: ['wait', 'hey'], happy: ['aha', 'mmhmm', 'nice'], mid: ['hmm', 'meh'] };
-const COOL = { hurt: 1.4, wait: 4, happy: 0, mid: 0 };
+// good / great: a treatment that went well, during the session
+const LINES = { hurt: ['ouch', 'ow', 'stop'], wait: ['wait', 'hey'], good: ['yes', 'better', 'ahh'], great: ['wow', 'perfect'],
+  happy: ['aha', 'mmhmm', 'nice'], mid: ['hmm', 'meh'] };
+const COOL = { hurt: 1.4, wait: 4, good: 2, great: 2, happy: 0, mid: 0 };
 function voiceOf(who) {
   const seed = (who && who.seed) || 0, k = who && who.kind;
   const g = FEMALE.has(k) ? 'f' : MALE.has(k) ? 'm' : (seed >> 3) % 2 ? 'f' : 'm';
@@ -72,7 +74,7 @@ export class Sound {
     src.connect(g).connect(this.sfxBus); src.start(t);
     return true;
   }
-  // a character speaks: what = 'hurt' | 'wait' | 'happy' | 'mid'. One short word, one
+  // a character speaks: what = 'hurt' | 'wait' | 'good' | 'great' | 'happy' | 'mid'. One short word, one
   // voice at a time; s (the patient state) gets s.talk so the mouth moves with the word.
   say(s, what) {
     if (!this.ctx || this.muted || !LINES[what]) return;

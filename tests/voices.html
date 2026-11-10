@@ -14,11 +14,11 @@ button:hover{border-color:var(--pink)}button.on{background:var(--pink);color:#ff
 .wrap{overflow-x:auto}
 </style></head><body>
 <h1>Patient voices</h1>
-<p>Click a word to hear it. Rows are the six voices. In the game: hurt = ouch / ow / stop it, a tool they didn't ask for = wait / hey, good end = aha / mm-hmm / nice, mid end = hmm / meh.</p>
+<p>Click a word to hear it. Rows are the six voices. In the game: hurt = ouch / ow / stop it, a tool they didn't ask for = wait / hey, a treatment done well = yes / better / ahh, done perfectly = wow / perfect, good end = aha / mm-hmm / nice, mid end = hmm / meh.</p>
 <div class="wrap"><table id="t"></table></div>
 <script>
 const V={m1:'Man 1 (Roger)',m2:'Man 2 (Chris)',m3:'Man 3 (Eric)',f1:'Woman 1 (Courtney)',f2:'Woman 2 (Trinity)',f3:'Woman 3 (Campbell)'};
-const W=['ouch','ow','stop','wait','hey','aha','mmhmm','nice','hmm','meh'];
+const W=['ouch','ow','stop','wait','hey','yes','better','ahh','wow','perfect','aha','mmhmm','nice','hmm','meh'];
 const t=document.getElementById('t');
 t.innerHTML='<tr><th>Voice</th>'+W.map(w=>`<th>${w}</th>`).join('')+'</tr>'+Object.entries(V).map(([k,n])=>`<tr><td>${n}</td>`+W.map(w=>`<td><button data-s="${k}-${w}">${w}</button></td>`).join('')+'</tr>').join('');
 let a=null;
