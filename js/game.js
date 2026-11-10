@@ -813,7 +813,7 @@ export class Game {
     this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()));
     if (this.mode === 'reveal') this.ui.layoutSplit(this.director.obsGoal);
   }
-  // both characters as they came out, side by side: [{ look, title, by }, ...] (two)
+  // characters as they came out, side by side (3 or 4: two rows): [{ look, title, by }, ...]
   pairLooks(items, below) {
     this.showLook(null, below);
     this.pair = items.map((it) => {
@@ -823,9 +823,13 @@ export class Game {
     });
   }
   drawPair(ctx, W, H, time) {
-    const f = this.director.free, n = this.pair.length, w = f.w / n;
+    const F = this.director.free, n = this.pair.length;
+    const cols = n <= 2 ? n : 2, rows = Math.ceil(n / cols), w = F.w / cols, h = F.h / rows;
     this.pair.forEach((p, i) => {
-      const x = f.x + w * i;
+      const col = i % cols, row = Math.floor(i / cols);
+      // a short last row sits in the middle
+      const inRow = row === rows - 1 ? n - row * cols : cols;
+      const x = F.x + (F.w - inRow * w) / 2 + w * col, f = { x, y: F.y + h * row, w, h };
       ctx.save();
       ctx.beginPath(); ctx.rect(x, f.y, w, f.h); ctx.clip();
       const k = Math.min((f.h - 56) / 700, w / 470), c = headToStage(p.s, 0, 10);
@@ -838,7 +842,7 @@ export class Game {
       ctx.font = '700 13px Fredoka, system-ui, sans-serif';
       const t1 = p.title.toUpperCase(), t2 = p.by;
       const tw = Math.min(w - 12, Math.max(ctx.measureText(t1).width, (ctx.font = '500 12px Fredoka, system-ui, sans-serif', ctx.measureText(t2).width)) + 22);
-      const cx = x + w / 2, y = f.y + f.h - 50;
+      const cx = x + w / 2, y = f.y + f.h - 48;
       ctx.beginPath(); ctx.roundRect(cx - tw / 2, y, tw, 40, 14); ctx.fillStyle = 'rgba(58,39,71,.8)'; ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = '700 13px Fredoka, system-ui, sans-serif'; ctx.fillText(t1, cx, y + 17, tw - 12);
@@ -846,9 +850,9 @@ export class Game {
       ctx.font = '500 12px Fredoka, system-ui, sans-serif'; ctx.fillText(t2, cx, y + 32, tw - 12);
       ctx.restore();
     });
-    if (n > 1) { // a thin line between them
+    if (n === 2) { // a thin line between them
       ctx.save(); ctx.strokeStyle = 'rgba(58,39,71,.14)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(f.x + w, f.y + 24); ctx.lineTo(f.x + w, f.y + f.h - 70); ctx.stroke(); ctx.restore();
+      ctx.beginPath(); ctx.moveTo(F.x + w, F.y + 24); ctx.lineTo(F.x + w, F.y + F.h - 70); ctx.stroke(); ctx.restore();
     }
   }
   // my character before and after the other player's turn on it

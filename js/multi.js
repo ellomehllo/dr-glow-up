@@ -1,8 +1,9 @@
 // Multiplayer, start to finish (MULTIPLAYER_PLAN.md): the people button opens it (first
 // time: pick a @username); from there a friend's room or anyone who is searching.
-//   A room: the host makes it and sends the code or link; whoever opens it is in the room
-//   at once, by name. Both press Ready; then the match: 90 seconds for each to make a
-//   character, 3-2-1, 90 seconds on each other's, the reveal, and back to the room.
+//   A room (2 to 4 players): the host makes it and sends the code or link; whoever opens it
+//   is in the room at once, by name. Everyone presses Ready; then the game: 90 seconds for
+//   each to make a character, then the characters go round, one round of 90 seconds per
+//   other player (2 players: 1 round, 3: 2, 4: 3), the reveal of them all, back to the room.
 //   Anyone: the character you bring (made beforehand), who you got (skip or ready), the
 //   90 second turn, the reveal.
 // During a turn a small window shows yours as they change it. Single player is the game as
@@ -117,7 +118,7 @@ export class Multi {
   drop() {
     const { phase, code, match } = this;
     if (phase === 'search') this.mp.leave().catch(() => {});
-    if (match && match.state !== 'over') this.mp.end(match.id).catch(() => {});
+    if (match && match.state !== 'over') this.api.end(match.id).catch(() => {});
     if (code) this.mp.roomLeave(code).catch(() => {});
     this.closeMatch();
     this.code = null; this.room = null;
@@ -143,6 +144,13 @@ export class Multi {
     if (!look || (this.seated === tag && this.game.mode === 'lobby')) return;
     this.seated = tag;
     this.game.showLook(look, this.below);
+  }
+  // the calls for what we're in: a room game (mp_game_*) or a one-on-one match (mp_*)
+  get api() {
+    const mp = this.mp;
+    return this.match && this.match.game
+      ? { state: (id) => mp.gameState(id), submit: (id, l, m) => mp.gameSubmit(id, l, m), react: (id, k) => mp.gameReact(id, k), end: (id) => mp.gameEnd(id) }
+      : { state: (id) => mp.state(id), submit: (id, l, m) => mp.submit(id, l, m), react: (id, k) => mp.react(id, k), end: (id) => mp.end(id) };
   }
   setPhase(p) { this.phase = p; this.epoch++; this.poll = 0; this.since = performance.now(); }
 
@@ -251,10 +259,10 @@ export class Multi {
   // the room as it is now: who is in, who is ready; once both were, the match
   setRoom(r, say = '') {
     if (!r || this.phase !== 'room') return;
-    if (r.match) { this.enter(r.match, 'room'); return; }
+    if (r.game) { this.enter(r.game, 'room'); return; }
     const old = this.room;
     this.room = r;
-    const key = (x) => (x ? JSON.stringify([x.host, x.guest]) : '');
+    const key = (x) => (x ? JSON.stringify(x.players) : '');
     if (say || !old || key(old) !== key(r) || this.lobby.screen !== 'room') this.showRoom(false, say);
   }
   showRoom(copied = false, say = '') {
@@ -265,7 +273,7 @@ export class Multi {
   // back to the room after a match there (the match ends for both)
   backToRoom(say = '') {
     const m = this.match;
-    if (m && m.state !== 'over') this.mp.end(m.id).catch(() => {});
+    if (m && m.state !== 'over') this.api.end(m.id).catch(() => {});
     if (this.live) this.live.send('poke');
     this.closeMatch();
     if (!this.code) { this.home(say); return; }
@@ -307,7 +315,7 @@ export class Multi {
       case 'name-save': this.nameSave(v); break;
       case 'hist': this.histAt(this.histI + (v === 'older' ? 1 : -1)); break;
       case 'see': this.see(v); break;
-      case 'react': this.call((id) => this.mp.react(id, v)); break;
+      case 'react': this.call((id) => this.api.react(id, v)); break;
       case 'invite': this.invite(); break;
       case 'join': this.drop(); this.setPhase('join'); this.lobby.show('join', {}); this.game.frameLook(); break;
       case 'join-code': this.joinCode(v); break;
@@ -364,7 +372,8 @@ export class Multi {
     this.live.send('poke');
   }
   onLive(ev, p) {
-    if (ev === 'look' && p && validLook(p.look)) {
+    const m = this.match;
+    if (ev === 'look' && p && validLook(p.look) && !(m && m.game && p.of !== m.seat)) { // in a room game: only looks of my character
       this.theirLive = p.look;
       if (this.game.salon && !this.game.salon.over) this.game.setLive(p.look);
     } else if (ev === 'poke' || ev === 'bye') { this.poll = 0; this.poked = true; }
@@ -379,7 +388,7 @@ export class Multi {
       const how = this.how, made = old && old.state === 'reveal';
       this.closeMatch();
       if (how === 'anyone') this.search(`${partner} left. Looking for someone else...`);
-      else if (how === 'room') this.backToRoom(made ? '' : `${partner} left the game.`);
+      else if (how === 'room') this.backToRoom(made ? '' : v.game && v.n > 2 ? 'Someone left, so the game ended.' : `${partner} left the game.`);
       else this.home(`${partner} left.`);
       return;
     }
@@ -388,7 +397,7 @@ export class Multi {
       if (this.making === mk) { if (this.madeIn) this.showMade(v); return; }
       if (Date.now() >= v.startsAt) this.beginMake(v);
       else if (this.lobby.screen !== 'start') {
-        this.lobby.show('start', { n: Math.ceil((v.startsAt - Date.now()) / 1000), text: 'Make a character for ' + partner });
+        this.lobby.show('start', { n: Math.ceil((v.startsAt - Date.now()) / 1000), text: this.makeText(v) });
         this.game.frameLook();
       }
       return;
@@ -402,15 +411,16 @@ export class Multi {
       return;
     }
     if (v.state === 'playing') {
-      if (this.turn === key) return; // the turn is on, or handed in and waiting
+      if (this.turn === key) { if (this.handedIn && v.game) this.showWaitRound(v); return; } // the turn is on, or handed in and waiting
       if (Date.now() >= v.startsAt) this.beginTurn(v);
       else if (this.game.mode !== 'lobby' || this.lobby.screen !== 'start') {
         this.sit(v.theirs, `theirs:${key}`);
-        this.lobby.show('start', { n: Math.ceil((v.startsAt - Date.now()) / 1000), partner });
+        this.lobby.show('start', { n: Math.ceil((v.startsAt - Date.now()) / 1000), partner, text: v.game ? `Round ${v.round} of ${v.rounds}: work on ${partner}'s character` : '' });
         this.game.frameLook();
       }
       return;
     }
+    if (v.state === 'reveal' && v.game) { this.groupReveal(v, old, key); return; }
     if (v.state === 'reveal') {
       const rx = (who, view) => { const r = view && view.reactions.find((x) => x.from === who); return r ? r.kind : null; };
       if (this.shown !== key) {
@@ -435,6 +445,7 @@ export class Multi {
   showReveal(relook) {
     const v = this.match;
     if (!v) return;
+    if (v.game) { this.showGroupReveal(relook); return; }
     const rx = (who) => { const r = v.reactions.find((x) => x.from === who); return r ? r.kind : null; };
     this.lobby.show('reveal', {
       room: this.how === 'room',
@@ -462,7 +473,7 @@ export class Multi {
   // switch the reveal between my character and theirs
   see(which) {
     if (!this.match || this.match.state !== 'reveal' || which === this.seeing) return;
-    this.seeing = ['both', 'mine', 'theirs'].includes(which) ? which : 'both';
+    this.seeing = ['both', 'mine', 'theirs', 'all'].includes(which) ? which : 'both';
     this.showReveal(true);
   }
   // making my character, on the clock (the creator, timed)
@@ -485,7 +496,7 @@ export class Multi {
     const ep = this.epoch;
     for (let i = 0; i < 4; i++) {
       try {
-        const v = await this.mp.made(m.id, look);
+        const v = await this.mp.gameMade(m.id, look);
         try { localStorage.setItem(SENT, hash(lookText(look))); } catch { /* no storage */ }
         if (this.live) this.live.send('poke');
         if (ep === this.epoch) this.setView(v);
@@ -498,8 +509,59 @@ export class Multi {
   }
   showMade(v) {
     if (this.lobby.screen === 'wait') return;
-    this.lobby.show('wait', { top: 'CHARACTER DONE', say: `Waiting for ${at(v.partner)} to finish their character...` });
+    const left = (v.players || []).filter((p) => !p.made && p.seat !== v.seat).map((p) => at(p.name));
+    this.lobby.show('wait', { top: 'CHARACTER DONE', say: `Waiting for ${left.join(', ') || 'the others'} to finish...` });
     this.game.frameLook();
+  }
+  makeText(v) {
+    const others = (v.players || []).filter((p) => p.seat !== v.seat);
+    return others.length === 1 ? `Make a character for ${at(others[0].name)}` : 'Make a character to pass around';
+  }
+  // handed in this round: who we're still waiting for
+  showWaitRound(v) {
+    const left = (v.players || []).filter((p) => !p.done && p.seat !== v.seat).map((p) => at(p.name));
+    const say = `Waiting for ${left.join(', ') || 'the others'}...`;
+    if (this.lobby.screen === 'wait') this.lobby.say(say);
+    else { this.lobby.show('wait', { say }); this.game.reframeReveal(); }
+  }
+  // ---------- the end of a room game: every character as it came out ----------
+  groupReveal(v, old, key) {
+    const mineR = (x) => x && x.results && x.results.find((r) => r.seat === x.seat);
+    if (this.shown !== key) {
+      this.shown = key; this.turn = key; this.seeing = 'all';
+      if (this.game.salon) this.game.leaveSalon();
+      const r = mineR(v);
+      if (this.me && r) { this.me.look = r.look; this.me.gen = (this.me.gen || 0) + v.rounds; } // what I bring next
+      this.showGroupReveal(true);
+    } else {
+      const ks = (x) => JSON.stringify((x && x.results || []).map((r) => r.kind));
+      if (ks(old) !== ks(v)) this.showGroupReveal(this.seeing === 'all');
+    }
+    // someone said what they think of how theirs turned out (I worked on it)
+    const before = old && old.id === v.id && old.results ? old.results : [];
+    for (const r of v.results || []) {
+      if (r.seat === v.seat || !r.kind) continue;
+      const was = before.find((b) => b.seat === r.seat);
+      if (old && old.state === 'reveal' && (!was || was.kind !== r.kind)) {
+        this.game.ui.toast(`${at(r.name)}: ${REACT_LABEL[r.kind]}`);
+        this.game.cheer(r.kind);
+      }
+    }
+  }
+  showGroupReveal(relook) {
+    const v = this.match;
+    const res = v.results || [], mine = res.find((r) => r.seat === v.seat);
+    this.lobby.show('reveal', { group: true, room: true, seeing: this.seeing, mine: mine && mine.kind, n: v.n });
+    if (relook) {
+      this.seated = null;
+      if (this.seeing === 'all') {
+        const by = (r) => `by ${r.by.map((n) => (this.me && n === this.me.name ? 'you' : at(n))).join(', ')}`;
+        // mine first, then the others in seat order
+        const list = [...res].sort((a, b) => (a.seat === v.seat ? -1 : b.seat === v.seat ? 1 : a.seat - b.seat));
+        this.game.pairLooks(list.map((r) => ({ look: r.look, title: r.seat === v.seat ? 'Yours' : `${at(r.name)}'s`, by: by(r) })), this.below);
+      } else if (mine && mine.first) this.game.revealLooks(mine.first, mine.look, this.below);
+    }
+    if (this.seeing === 'all') this.game.frameLook(); else this.game.reframeReveal();
   }
   beginTurn(v) {
     this.turn = `${v.id}:${v.round}`;
@@ -521,7 +583,7 @@ export class Multi {
     const ep = this.epoch;
     for (let i = 0; i < 4; i++) {
       try {
-        const v = await this.mp.submit(m.id, after);
+        const v = await this.api.submit(m.id, after);
         if (this.live) this.live.send('poke');
         if (ep === this.epoch) this.setView(v);
         return;
@@ -541,7 +603,8 @@ export class Multi {
       if (this.sendT <= 0) {
         this.sendT = SEND;
         const look = g.lookNow(), t = lookText(look);
-        if (t !== this.lastSent && this.live.send('look', { look })) this.lastSent = t;
+        const m = this.match, of = m && m.game ? m.theirs_seat : undefined;
+        if (t !== this.lastSent && this.live.send('look', { look, of })) this.lastSent = t;
       }
     }
   }
@@ -570,13 +633,13 @@ export class Multi {
     }
     // made mine, and they never handed theirs in: they're gone
     if (this.phase === 'match' && m && m.state === 'create' && this.madeIn && Date.now() > m.endsAt + MAKE_GRACE * 1000) {
-      this.backToRoom(`${at(m.partner)} left the game.`);
+      this.backToRoom('Someone never finished their character, so the game ended.');
       return;
     }
     // handed in, they haven't, and they're gone: my character goes in as they last showed it
-    if (this.phase === 'match' && m && m.state === 'playing' && this.handedIn && !this.fellBack && !m.mine_after && Date.now() > m.endsAt + GRACE * 1000) {
+    if (this.phase === 'match' && m && m.state === 'playing' && this.handedIn && !this.fellBack && !(m.game ? m.mine_done : m.mine_after) && Date.now() > m.endsAt + GRACE * 1000) {
       this.fellBack = true;
-      this.mp.submit(m.id, this.theirLive || m.mine, true).then((v) => this.setView(v), () => { this.poll = 0; });
+      this.api.submit(m.id, this.theirLive || m.mine, true).then((v) => this.setView(v), () => { this.poll = 0; });
     }
     if (this.phase === 'search') {
       const s = (performance.now() - this.since) / 1000;
@@ -597,7 +660,7 @@ export class Multi {
     else if (phase === 'match' && this.match) {
       const g = this.game;
       if (g.salon && !g.salon.over && !this.poked) return; // mid-turn: only when they signal (they may have left)
-      fn = () => this.mp.state(this.match.id);
+      fn = () => this.api.state(this.match.id);
     }
     if (!fn) return;
     this.poked = false;

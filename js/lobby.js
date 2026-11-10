@@ -42,7 +42,8 @@ export const REACT_LABEL = { love: 'LOVE IT', funny: 'FUNNY', ruined: 'RUINED' }
 
 const NOTE = {
   'no such room': 'No room with that code. Check it and try again.',
-  'room is full': 'Someone else joined that room already.',
+  'room is full': 'That room is full (4 players).',
+  'game on': "They're in the middle of a game. Try again when it's over.",
   'your own room': "That's your own room code.",
   'too many tries': 'Too many wrong codes. Wait a few minutes.',
   'room closed': 'The room closed.',
@@ -136,7 +137,7 @@ export class Lobby {
     if (first && screen !== 'join' && screen !== 'name' && !matchMedia('(pointer: coarse)').matches) first.focus({ preventScroll: true });
   }
   // just the status line of the screen showing (no rebuild)
-  say(text) { const s = this.sheet.querySelector('.lb-say'); if (s) s.textContent = text; }
+  say(text) { const s = this.sheet.querySelector('.lb-say:not(.lb-top)'); if (s) s.textContent = text; }
 
   html(screen, d) {
     const btn = (act, icon, label, cls = '', extra = '') => `<button type="button" class="lb-btn ${cls}" data-act="${act}" ${extra}>${LB_ICON[icon]}<span>${label}</span></button>`;
@@ -179,25 +180,25 @@ export class Lobby {
           <p class="lb-say">${esc(d.n > 1 ? `${d.n - 1} ${d.n === 2 ? 'player has' : 'players have'} worked on your character.` : 'No one has worked on it yet.')}</p>`;
       }
       case 'room': {
-        const person = (p, you, host) => p
-          ? `<li class="lb-person${p.ready ? ' ready' : ''}"><i class="lb-av" aria-hidden="true">${esc(p.name[0].toUpperCase())}</i>
-              <b>${esc(at(p.name))}${you ? ' <em>YOU</em>' : ''}${host ? ' <em>HOST</em>' : ''}</b>
-              <small>${p.ready ? `${LB_ICON.check}READY` : 'NOT READY'}</small></li>`
-          : `<li class="lb-person empty"><span class="lb-spin" aria-hidden="true"></span><b>Waiting for a friend...</b></li>`;
-        const host = d.room ? d.role === 'host' : true;
-        const r = d.room || {};
-        const me = host ? r.host : r.guest, them = host ? r.guest : r.host;
-        const say = d.say || (!them ? 'Send the code or link to a friend.'
-          : me && me.ready ? `Waiting for ${at(them.name)} to be ready...`
-          : 'Ready? You each make a character in 90 seconds, then get 90 seconds on the other one.');
+        const r = d.room || {}, ps = r.players || [], max = r.max || 4, me = ps.find((p) => p.you);
+        const person = (p) => `<li class="lb-person${p.ready ? ' ready' : ''}"><i class="lb-av" aria-hidden="true">${esc(p.name[0].toUpperCase())}</i>
+            <b>${esc(at(p.name))}${p.you ? ' <em>YOU</em>' : ''}${p.host ? ' <em>HOST</em>' : ''}</b>
+            <small>${p.ready ? `${LB_ICON.check}READY` : 'NOT READY'}</small></li>`;
+        const open = ps.length < max ? `<li class="lb-person empty"><span class="lb-spin" aria-hidden="true"></span>
+            <b>${ps.length < 2 ? 'Waiting for friends...' : `Room for ${max - ps.length} more`}</b></li>` : '';
+        const waiting = ps.filter((p) => !p.ready && !p.you).map((p) => at(p.name));
+        const rounds = ps.length - 1;
+        const say = d.say || (ps.length < 2 ? `Send the code or link. Up to ${max} can play.`
+          : me && me.ready ? `Waiting for ${waiting.join(', ')}...`
+          : `Everyone makes a character in 90 seconds, then ${rounds} ${rounds === 1 ? 'round' : 'rounds'} of 90 seconds on the others'.`);
         return `${head('ROOM', 'leave-room')}
           ${d.code ? `<div class="lb-row lb-roomcode">
             <p class="lb-code" aria-label="Room code ${esc(d.code.split('').join(' '))}">${esc(d.code)}</p>
             <button type="button" class="lb-x" data-act="copy" aria-label="${d.copied ? 'Link copied' : 'Copy link'}">${LB_ICON[d.copied ? 'check' : 'copy']}</button>
             ${d.canShare ? `<button type="button" class="lb-x" data-act="share" aria-label="Share link">${LB_ICON.share}</button>` : ''}
           </div>` : `<p class="lb-wait">${spin}</p>`}
-          ${d.room ? `<ul class="lb-people" aria-label="Players">${person(r.host, host, true)}${person(r.guest, !host, false)}</ul>
-          <div class="lb-row">${me && me.ready ? btn('unready', 'close', 'CANCEL READY') : btn('ready-room', 'check', 'READY', 'lb-main lb-pink', them ? '' : 'disabled')}</div>` : ''}
+          ${d.room ? `<ul class="lb-people" aria-label="Players, ${ps.length} of ${max}">${ps.map(person).join('')}${open}</ul>
+          <div class="lb-row">${me && me.ready ? btn('unready', 'close', 'CANCEL READY') : btn('ready-room', 'check', 'READY', 'lb-main lb-pink', ps.length >= 2 ? '' : 'disabled')}</div>` : ''}
           <p class="lb-say">${esc(say)}</p>`;
       }
       case 'join':
@@ -225,6 +226,16 @@ export class Lobby {
       case 'wait':
         return `<p class="lb-say lb-top">${esc(d.top || "TIME'S UP")}</p><p class="lb-wait">${spin}</p><p class="lb-say">${esc(d.say || `Waiting for ${d.partner}...`)}</p>`;
       case 'reveal': {
+        if (d.group) {
+          const all = d.seeing !== 'mine', tab = (v, label, on) => `<button type="button" role="tab" data-act="see" data-v="${v}" aria-selected="${on}" class="${on ? 'on' : ''}">${label}</button>`;
+          const rx = (k) => `<button type="button" class="lb-btn lb-rx${d.mine === k ? ' on' : ''}" data-act="react" data-v="${k}" aria-pressed="${d.mine === k}">${LB_ICON[k]}<span>${REACT_LABEL[k]}</span></button>`;
+          return `<div class="lb-seg" role="tablist" aria-label="Which characters">${tab('all', d.n > 2 ? 'ALL' : 'BOTH', all)}${tab('mine', 'YOURS', !all)}</div>
+            <p class="lb-say lb-top">HOW DID YOURS TURN OUT?</p>
+            <div class="lb-row lb-rxs" role="group" aria-label="What do you think?">${rx('love')}${rx('funny')}${rx('ruined')}</div>
+            <div class="lb-row">${btn('room-again', 'again', 'BACK TO THE ROOM', 'lb-main lb-pink')}</div>
+            <div class="lb-row lb-small">${btn('home', 'close', 'LEAVE', 'lb-ghost')}</div>
+            <p class="lb-say">${esc(d.say || (d.mine ? 'Everyone who worked on it sees what you think.' : all ? 'Every character, after everyone had a go.' : 'Yours as you made it, and as it came back.'))}</p>`;
+        }
         const P = esc(String(d.partner || '').toUpperCase());
         const see = d.seeing || 'both', mine = see !== 'theirs', tab = (v, label) => `<button type="button" role="tab" data-act="see" data-v="${v}" aria-selected="${see === v}" class="${see === v ? 'on' : ''}">${label}</button>`;
         const rx = (k) => `<button type="button" class="lb-btn lb-rx${d.mine === k ? ' on' : ''}" data-act="react" data-v="${k}" aria-pressed="${d.mine === k}">${LB_ICON[k]}<span>${REACT_LABEL[k]}</span></button>`;

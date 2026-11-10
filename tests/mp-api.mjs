@@ -118,36 +118,67 @@ ok('after a skip they are not paired again', (await A.rpc('mp_join')) === null &
 await A.rpc('mp_leave'); await B.rpc('mp_leave');
 
 console.log('rooms');
-const D = await player(); // a friend with no character yet
-const dName = (await D.rpc('mp_me')).name;
+const D = await player(), E = await player(); // friends with no character yet
+const names = {};
+for (const [k, p] of [['A', A], ['B', B], ['C', C], ['D', D], ['E', E]]) names[k] = (await p.rpc('mp_me')).name;
 let room = await A.rpc('mp_room_create');
-ok('a room has a 6 character code without look-alikes, and no guest yet', /^[A-HJKMNP-Z2-9]{6}$/.test(room.code) && room.role === 'host' && room.guest === null, room);
-ok('your own code is refused', (await A.rpc('mp_room_enter', { p_code: room.code })).error === 'your own room');
-ok('a wrong code is refused', (await C.rpc('mp_room_enter', { p_code: 'ZZZZ22' })).error === 'no such room');
-let rd = await D.rpc('mp_room_enter', { p_code: room.code.toLowerCase() });
-ok('a friend with no character gets in by code (any case), by name', rd.role === 'guest' && rd.guest && rd.guest.name === dName && rd.host.name === me.name, rd);
-ok('the host sees them in the room', (await A.rpc('mp_room_view', { p_code: room.code })).guest.name === dName);
-ok('a full room is refused', (await B.rpc('mp_room_enter', { p_code: room.code })).error === 'room is full');
-let ra = await A.rpc('mp_room_ready', { p_code: room.code, p_ready: true });
-ok('one ready: no game yet', ra.match === null && ra.host.ready === true && ra.guest.ready === false, ra);
-rd = await D.rpc('mp_room_ready', { p_code: room.code, p_ready: true });
-ok('both ready: the game starts with 93 s to make characters', rd.match && rd.match.state === 'create' && Math.round((Date.parse(rd.match.ends_at) - Date.parse(rd.match.now)) / 1000) === 93, rd.match);
-const m2 = rd.match.id;
-ok('the host is in the same game', (await A.rpc('mp_room_view', { p_code: room.code })).match.id === m2);
-v = await A.rpc('mp_made', { p_match: m2, p_look: look('A made') });
-ok('one made theirs: still making', v.state === 'create' && v.mine.who.tag === 'A made', v);
-v = await D.rpc('mp_made', { p_match: m2, p_look: look('D made') });
-ok('both made: the turn on each other\'s starts', v.state === 'playing' && v.mine.who.tag === 'D made' && v.theirs.who.tag === 'A made', v);
-ok('what they made is the character they bring', (await D.rpc('mp_me')).look.who.tag === 'D made');
-await A.rpc('mp_end', { p_match: m2 });
-rd = await D.rpc('mp_room_view', { p_code: room.code });
-ok('after the game: back in the room, nobody ready', rd.match === null && rd.guest.name === dName && !rd.host.ready && !rd.guest.ready, rd);
-await D.rpc('mp_room_leave', { p_code: room.code });
-ok('a friend who leaves frees the seat', (await A.rpc('mp_room_view', { p_code: room.code })).guest === null);
-await A.rpc('mp_room_leave', { p_code: room.code });
-ok('a room the host left is closed', (await D.rpc('mp_room_enter', { p_code: room.code })).error === 'no such room');
+const code = room.code;
+ok('a room has a 6 character code without look-alikes, and just the host', /^[A-HJKMNP-Z2-9]{6}$/.test(code) && room.role === 'host' && room.players.length === 1 && room.players[0].host, room);
+ok('your own code is refused', (await A.rpc('mp_room_enter', { p_code: code })).error === 'your own room');
+ok('a wrong code is refused', (await E.rpc('mp_room_enter', { p_code: 'ZZZZ22' })).error === 'no such room');
+let rd = await D.rpc('mp_room_enter', { p_code: code.toLowerCase() });
+ok('a friend with no character gets in by code (any case), by name', rd.role === 'guest' && rd.players.map((p) => p.name).join() === [names.A, names.D].join(), rd);
+await C.rpc('mp_room_enter', { p_code: code });
+await B.rpc('mp_room_enter', { p_code: code });
+ok('everyone sees all four, in the order they came', (await A.rpc('mp_room_view', { p_code: code })).players.map((p) => p.name).join() === [names.A, names.D, names.C, names.B].join());
+ok('a fifth is refused', (await E.rpc('mp_room_enter', { p_code: code })).error === 'room is full');
+await B.rpc('mp_room_leave', { p_code: code });
+ok('one leaves: three left', (await A.rpc('mp_room_view', { p_code: code })).players.length === 3);
+await A.rpc('mp_room_ready', { p_code: code, p_ready: true });
+let ra = await D.rpc('mp_room_ready', { p_code: code, p_ready: true });
+ok('not everyone ready: no game yet', ra.game === null && ra.players.filter((p) => p.ready).length === 2, ra);
+let rc = await C.rpc('mp_room_ready', { p_code: code, p_ready: true });
+const g = rc.game;
+ok('all ready: a 3 player game, 2 rounds, 93 s to make characters', g && g.state === 'create' && g.n === 3 && g.rounds === 2
+  && Math.round((Date.parse(g.ends_at) - Date.parse(g.now)) / 1000) === 93, g);
+ok('a game on: nobody else gets in', (await E.rpc('mp_room_enter', { p_code: code })).error === 'game on');
+const P = { A, D, C }; // seats 0, 1, 2
+await A.rpc('mp_game_made', { p_game: g.id, p_look: look('A') });
+v = await D.rpc('mp_game_made', { p_game: g.id, p_look: look('D') });
+ok('two made theirs: still making', v.state === 'create' && v.players.filter((p) => p.made).length === 2, v.players);
+v = await C.rpc('mp_game_made', { p_game: g.id, p_look: look('C') });
+ok('all made: round 1 of 2', v.state === 'playing' && v.round === 1, v);
+// round r: seat s works on seat (s - r) mod 3
+let va = await A.rpc('mp_game_state', { p_game: g.id });
+ok('round 1: A works on C\'s, D works on A\'s', va.partner === names.C && va.theirs.who.tag === 'C' && va.worker === names.D && va.mine.who.tag === 'A', va);
+for (const [k, p] of Object.entries(P)) {
+  const s0 = await p.rpc('mp_game_state', { p_game: g.id });
+  v = await p.rpc('mp_game_submit', { p_game: g.id, p_look: look(`${s0.theirs.who.tag}>${k}`) });
+}
+ok('all handed in: round 2', v.state === 'playing' && v.round === 2, v);
+va = await A.rpc('mp_game_state', { p_game: g.id });
+ok('round 2: A works on D\'s as C left it', va.partner === names.D && va.theirs.who.tag === 'D>C', va.theirs);
+for (const [k, p] of Object.entries(P)) {
+  const s0 = await p.rpc('mp_game_state', { p_game: g.id });
+  v = await p.rpc('mp_game_submit', { p_game: g.id, p_look: look(`${s0.theirs.who.tag}>${k}`) });
+}
+ok('after the last round: the reveal', v.state === 'reveal' && v.results.length === 3, v.state);
+const ra0 = v.results.find((r) => r.seat === 0);
+ok('every character went through every other player', ra0.look.who.tag === 'A>D>C' && ra0.first.who.tag === 'A' && ra0.by.join() === [names.D, names.C].join(), ra0);
+ok('what came back is the character A brings', (await A.rpc('mp_me')).look.who.tag === 'A>D>C');
+const gotA = (await A.rpc('mp_me')).got.love, gotC = (await C.rpc('mp_me')).got.love;
+await D.rpc('mp_game_react', { p_game: g.id, p_kind: 'love' });
+ok("D's reaction counts for both who worked on D's", (await A.rpc('mp_me')).got.love === gotA + 1 && (await C.rpc('mp_me')).got.love === gotC + 1);
+ok('everyone sees it', (await A.rpc('mp_game_state', { p_game: g.id })).results.find((r) => r.seat === 1).kind === 'love');
+await A.rpc('mp_game_end', { p_game: g.id });
+rd = await D.rpc('mp_room_view', { p_code: code });
+ok('after the game: all back in the room, nobody ready', rd.game === null && rd.players.length === 3 && rd.players.every((p) => !p.ready), rd);
+await D.rpc('mp_room_leave', { p_code: code });
+ok('a friend who leaves frees the seat', (await A.rpc('mp_room_view', { p_code: code })).players.length === 2);
+await A.rpc('mp_room_leave', { p_code: code });
+ok('a room the host left is closed for everyone', (await C.rpc('mp_room_view', { p_code: code })).err === 'room closed');
 let last;
-for (let i = 0; i < 21; i++) last = await C.rpc('mp_room_enter', { p_code: `QQQQQ${'23456789'[i % 8]}` });
+for (let i = 0; i < 21; i++) last = await E.rpc('mp_room_enter', { p_code: `QQQQQ${'23456789'[i % 8]}` });
 ok('guessing is limited', last.error === 'too many tries', last);
 
 console.log('realtime');

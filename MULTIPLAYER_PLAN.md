@@ -98,3 +98,15 @@ outside network calls).
 - Names are typed usernames shown as @name: 3-20 of a-z 0-9 _, unique, short blocklist.
 - Play with anyone is unchanged (character made beforehand, preview, skip/ready).
 - Migration 20261115090000_room_lobby.sql (backup: marblemaxx-backups/2026-11-10-before-room-lobby).
+
+## Group rooms (2-4 players)
+Friend rooms hold up to 4. Everyone makes a character (90 s), then n-1 rounds: in round r,
+seat s works on seat (s-r) mod n, as that character is now, so each look is edited by everyone
+else in turn. Reveal shows every character; reactions on your own credit all its editors.
+Tables: mp_games, mp_game_players, mp_game_work, mp_game_reactions, mp_room_members
+(migration 20261116090000_group_rooms). Random matchmaking stays 1v1 on mp_matches.
+
+## Sounds
+One-shots are ElevenLabs clips in sounds/sfx (synth fallback until loaded); each character
+kind has ouch / happy / gasp lines in sounds/voice, played from react(). Regenerate with
+tests/fetch-sounds.sh <dir with sfx.tsv, voice.tsv>.

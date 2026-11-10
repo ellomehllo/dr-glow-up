@@ -28,6 +28,10 @@ export class Mp {
   view(v) {
     if (!v || typeof v !== 'object') return null;
     for (const k of LOOKS) if (v[k] != null && !validLook(v[k])) v[k] = null;
+    if (Array.isArray(v.results)) {
+      v.results = v.results.filter((r) => r && validLook(r.look));
+      for (const r of v.results) { if (!validLook(r.first)) r.first = null; if (!Array.isArray(r.by)) r.by = []; if (!REACTIONS.includes(r.kind)) r.kind = null; }
+    }
     v.reactions = Array.isArray(v.reactions) ? v.reactions.filter((r) => r && REACTIONS.includes(r.kind)) : [];
     if (v.now) this.skew = Date.parse(v.now) - Date.now();
     v.startsAt = v.starts_at ? Date.parse(v.starts_at) - this.skew : null; // in our clock
@@ -70,20 +74,39 @@ export class Mp {
     if (!REACTIONS.includes(kind)) throw new Error('bad reaction');
     return this.view(await this.rpc('mp_react', { p_match: id, p_kind: kind }));
   }
-  // the character I made in the match's first 90 seconds
-  async made(id, look) {
-    if (!validLook(look)) throw new Error('bad look');
-    return this.view(await this.rpc('mp_made', { p_match: id, p_look: look }));
-  }
   async again(id) { return this.view(await this.rpc('mp_again', { p_match: id })); }
   end(id) { return this.rpc('mp_end', { p_match: id }); }
 
-  // ---------- rooms (play with a friend) ----------
-  // a room: { code, role: 'host'|'guest', host: { name, ready }, guest (or null), match (a view, or null) }
-  room(r) { if (r && r.match) r.match = this.view(r.match); return r; }
+  // ---------- room games (2 to 4 players: make characters, then pass them round) ----------
+  // a game view: { id, game: true, n, state: 'create'|'playing'|'reveal'|'over', round, rounds,
+  //   seat, players: [{ seat, name, made, done }], partner, theirs_seat, worker, me_done,
+  //   mine_done, mine, theirs, results: [{ seat, name, first, look, by: [names], kind }] }
+  async gameState(id) { return this.view(await this.rpc('mp_game_state', { p_game: id })); }
+  async gameMade(id, look) {
+    if (!validLook(look)) throw new Error('bad look');
+    return this.view(await this.rpc('mp_game_made', { p_game: id, p_look: look }));
+  }
+  // what I made of this round's character; mine: hand in my own as it was last shown (whoever had it left)
+  async gameSubmit(id, look, mine = false) {
+    if (!validLook(look)) throw new Error('bad look');
+    return this.view(await this.rpc('mp_game_submit', { p_game: id, p_look: look, p_mine: mine }));
+  }
+  async gameReact(id, kind) {
+    if (!REACTIONS.includes(kind)) throw new Error('bad reaction');
+    return this.view(await this.rpc('mp_game_react', { p_game: id, p_kind: kind }));
+  }
+  gameEnd(id) { return this.rpc('mp_game_end', { p_game: id }); }
+
+  // ---------- rooms (play with friends) ----------
+  // a room: { code, role: 'host'|'guest', max, players: [{ name, ready, host, you }], game (a view, or null) }
+  room(r) {
+    if (r && r.game) r.game = this.view(r.game);
+    if (r && !Array.isArray(r.players)) r.players = [];
+    return r;
+  }
   // a new room of mine
   async roomCreate() { return this.room(await this.rpc('mp_room_create')); }
-  // into a friend's room by code: the room, or throws with e.msg 'no such room' | 'room is full' | 'your own room' | 'too many tries'
+  // into a friend's room by code: the room, or throws with e.msg 'no such room' | 'room is full' | 'game on' | 'your own room' | 'too many tries'
   async roomEnter(code) {
     const r = await this.rpc('mp_room_enter', { p_code: code });
     if (r && r.error) { const e = new Error(r.error); e.msg = r.error; throw e; }
