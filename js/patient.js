@@ -170,8 +170,11 @@ export function makeState(setup = DEFAULT_SETUP) {
 }
 export function resetState(s, setup) { Object.assign(s, makeState(setup)); }
 
+// onReact.fn (set by main) gives the character a voice: (s, expr, dur) => void
+export const onReact = { fn: null };
 export function react(s, expr, dur = 0.8, mouth = null) {
   s.expr = expr; s.mouth = mouth; s.exprT = dur;
+  if (onReact.fn) onReact.fn(s, expr, dur);
 }
 
 // head origin offset: sunk into the shoulders before mewing, raised past ideal after

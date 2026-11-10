@@ -1,6 +1,14 @@
-// Every sound is synthesised with WebAudio: bouncy tones, filtered noise, little
-// envelopes, plus a light marimba loop. Nothing starts until the first user gesture
-// calls init(); with ?debug (automated checks) init is a no-op and nothing plays.
+// One-shots play recorded clips from sounds/sfx (made with ElevenLabs) once loaded, and
+// fall back to the WebAudio synth versions below until then (or if a file fails).
+// Loops and music stay synthesised. Characters speak short lines from sounds/voice.
+// Nothing starts until the first user gesture calls init(); with ?debug (automated
+// checks) init is a no-op and nothing plays.
+const SFX = ['pop', 'splat', 'boing', 'tink', 'nick', 'shing', 'sparkle', 'lock', 'zap', 'knock', 'oink', 'drip',
+  'tick', 'stamp', 'success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud', 'flash'];
+const PITCHED = new Set(['pop', 'boing', 'tink', 'zap', 'knock']); // first argument is a pitch
+const SFX_VOL = { tick: 0.5, drip: 0.6, sparkle: 0.7, shing: 0.7, cheer: 0.6, fanfare: 0.7, flash: 0.7, nick: 0.8, knock: 0.8 };
+const VOICES = ['goth', 'bodybuilder', 'bookworm', 'brainiac', 'foodie', 'punk', 'bully', 'gamer', 'glam', 'grandpa', 'regular'];
+const base = new URL('../sounds/', import.meta.url);
 export class Sound {
   constructor() {
     this.ctx = null;
@@ -10,6 +18,51 @@ export class Sound {
     this.grains = { bubble: 0, bloop: 0 };
     this._acc = { bubble: 0, bloop: 0 };
     this.musicOn = false;
+    this.buf = {}; this.last = {}; this.vbuf = {}; this.voiceUntil = 0;
+    for (const n of SFX) {
+      const synth = this[n].bind(this);
+      this[n] = (...a) => { if (this.ctx && !this._sample(n, a[0])) synth(...a); };
+    }
+  }
+  async _load(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(url);
+    const data = await r.arrayBuffer();
+    return new Promise((ok, no) => this.ctx.decodeAudioData(data, ok, no));
+  }
+  _loadSfx() { for (const n of SFX) this._load(new URL(`sfx/${n}.mp3`, base)).then((b) => { this.buf[n] = b; }, () => {}); }
+  _sample(n, pitch) {
+    const b = this.buf[n]; if (!b) return false;
+    const t = this.ctx.currentTime;
+    if (t - (this.last[n] || -1) < 0.045) return true; // the same clip stacked in one frame just gets louder
+    this.last[n] = t;
+    const src = this.ctx.createBufferSource(); src.buffer = b;
+    if (PITCHED.has(n) && typeof pitch === 'number') src.playbackRate.value = Math.max(0.5, Math.min(2, pitch));
+    const g = this.ctx.createGain(); g.gain.value = SFX_VOL[n] || 0.9;
+    src.connect(g); this._out(g, 0.08); src.start(t);
+    return true;
+  }
+  // a character's line: 'ouch' | 'happy' | 'gasp'. One voice at a time, with a breather between.
+  voice(kind, line) {
+    if (!this.ctx || this.muted) return;
+    if (!VOICES.includes(kind)) kind = 'regular';
+    const key = `${kind}-${line}`, t = this.ctx.currentTime;
+    if (t < this.voiceUntil) return;
+    const b = this.vbuf[key];
+    if (!b) { if (b === undefined) { this.vbuf[key] = null; this._load(new URL(`voice/${key}.mp3`, base)).then((x) => { this.vbuf[key] = x; }, () => {}); } return; }
+    this.voiceUntil = t + b.duration + 1.4;
+    const src = this.ctx.createBufferSource(); src.buffer = b;
+    src.playbackRate.value = 0.97 + Math.random() * 0.06;
+    const g = this.ctx.createGain(); g.gain.value = 0.8;
+    src.connect(g); this._out(g, 0.05); src.start(t);
+  }
+  // load one character's lines ahead of time (when they sit down)
+  prepVoice(kind) {
+    if (!this.ctx) return;
+    for (const l of ['ouch', 'happy', 'gasp']) {
+      const key = `${VOICES.includes(kind) ? kind : 'regular'}-${l}`;
+      if (this.vbuf[key] === undefined) { this.vbuf[key] = null; this._load(new URL(`voice/${key}.mp3`, base)).then((x) => { this.vbuf[key] = x; }, () => {}); }
+    }
   }
   get ready() { return !!this.ctx; }
   init() {
@@ -35,6 +88,7 @@ export class Sound {
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
     this.noiseBuf = nb;
     this._buildLoops();
+    this._loadSfx();
     this.startMusic();
   }
   _targetVol() { return this.muted || !this.platformOn ? 0 : 0.85; }
