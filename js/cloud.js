@@ -71,6 +71,12 @@ export class Cloud {
     const send = async (token) => fetch(API + path, { method, headers: headers(token), body: body ? JSON.stringify(body) : undefined });
     let r = await send(await this.token());
     if (r.status === 401) { this.session = { ...this.session, expires_at: 0 }; r = await send(await this.token()); }
+    // the player behind this session is gone (removed on the server): a new one, once
+    if (r.status === 409 && this.session && !this.renewed) {
+      let gone = false;
+      try { gone = /foreign key/i.test((await r.clone().json()).message || ''); } catch { /* not json */ }
+      if (gone) { this.renewed = true; this.session = null; writeSession(null); r = await send(await this.token()); }
+    }
     if (!r.ok) {
       const e = new Error(`cloud ${r.status}`);
       e.status = r.status;

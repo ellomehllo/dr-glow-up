@@ -41,6 +41,12 @@ export class Mp {
     if (r && r.look && !validLook(r.look)) r.look = null;
     return r;
   }
+  // the character I bring, version by version back to how I made it (newest first):
+  // [{ gen, by (who had that turn; null: I made it), at, look }]
+  async history() {
+    const r = await this.rpc('mp_history');
+    return Array.isArray(r) ? r.filter((h) => h && validLook(h.look)) : [];
+  }
   // keep the creator's character as the one I bring
   save(look) {
     if (!validLook(look)) return Promise.reject(new Error('bad look'));

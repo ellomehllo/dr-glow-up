@@ -8,7 +8,7 @@
 // carries the character being worked on, for the window, and pokes to check the match now.
 import { Mp, roomLink, cleanCode } from './mp.js';
 import { Live } from './live.js';
-import { Lobby, noteFor } from './lobby.js';
+import { Lobby, noteFor, REACT_LABEL } from './lobby.js';
 import { Creator } from './creator.js';
 import { lookText, validLook } from './look.js';
 
@@ -85,7 +85,7 @@ export class Multi {
       if (ep !== this.epoch) return false;
       this.me = me;
       this.seated = null;
-      this.sit(this.myLook(), 'me');
+      this.sit(this.myLook(), `me:${this.me ? this.me.gen : ''}`);
       return true;
     } catch {
       if (ep === this.epoch) this.note('Could not reach the game. Check your connection and try again.', { act: 'retry', label: 'TRY AGAIN', icon: 'again', back: 'leave' });
@@ -138,8 +138,41 @@ export class Multi {
   home(say = '') {
     this.drop();
     this.setPhase('home');
-    this.sit(this.myLook(), 'me');
-    this.lobby.show('home', { name: this.me && this.me.name, say });
+    this.sit(this.myLook(), `me:${this.me ? this.me.gen : ''}`);
+    this.showHome(say);
+    // what I bring and how my work went may have changed (a match just ended)
+    const ep = this.epoch;
+    this.mp.me().then((me) => {
+      if (ep !== this.epoch || !me) return;
+      this.me = me;
+      this.sit(this.myLook(), `me:${me.gen}`);
+      this.showHome(say);
+    }, () => {});
+  }
+  showHome(say = '') {
+    const me = this.me || {};
+    this.lobby.show('home', { name: me.name, gen: me.gen || 0, got: me.got, say });
+    this.game.frameLook();
+  }
+  // my character's history, one version at a time in the chair
+  async history() {
+    this.setPhase('history');
+    const ep = this.epoch;
+    this.lobby.show('history', { i: 0, n: 1, item: {} });
+    try {
+      const list = await this.mp.history();
+      if (ep !== this.epoch) return;
+      this.hist = list;
+      this.histAt(0);
+    } catch { if (ep === this.epoch) this.home('Could not load the history. Try again.'); }
+  }
+  histAt(i) {
+    const list = this.hist || [];
+    if (!list.length) return;
+    i = Math.max(0, Math.min(list.length - 1, i));
+    this.histI = i;
+    this.sit(list[i].look, `hist:${i}`);
+    this.lobby.show('history', { i, n: list.length, item: list[i] });
     this.game.frameLook();
   }
   note(say, o = {}) {
@@ -182,7 +215,7 @@ export class Multi {
   search(say = '') {
     this.drop();
     this.setPhase('search');
-    this.sit(this.myLook(), 'me');
+    this.sit(this.myLook(), `me:${this.me ? this.me.gen : ''}`);
     this.searchSay = say;
     this.lobby.show('search', { say: say || 'Looking for someone to play with...' });
     this.game.frameLook();
@@ -195,6 +228,10 @@ export class Multi {
       case 'leave': this.leave(); break;
       case 'retry': this.open(); break;
       case 'home': this.home(); break;
+      case 'history': this.history(); break;
+      case 'hist': this.histAt(this.histI + (v === 'older' ? 1 : -1)); break;
+      case 'see': this.see(v); break;
+      case 'react': this.call((id) => this.mp.react(id, v)); break;
       case 'invite': this.invite(); break;
       case 'join': this.drop(); this.setPhase('join'); this.lobby.show('join', {}); this.game.frameLook(); break;
       case 'join-code': this.joinCode(v); break;
@@ -285,22 +322,46 @@ export class Multi {
       return;
     }
     if (v.state === 'reveal') {
+      const rx = (who, view) => { const r = view && view.reactions.find((x) => x.from === who); return r ? r.kind : null; };
       if (this.shown !== key) {
         this.shown = key;
         this.turn = key;
+        this.seeing = 'mine';
         if (this.game.salon) this.game.leaveSalon();
-        this.lobby.show('reveal', { partner, again: v.me_again, theyAgain: v.they_again });
-        if (v.mine && v.mine_after) {
-          this.seated = null;
-          this.game.revealLooks(v.mine, v.mine_after, this.below);
-          if (this.me) this.me.look = v.mine_after; // what I bring next
-        }
-        this.game.reframeReveal();
-      } else if (!old || old.me_again !== v.me_again || old.they_again !== v.they_again) {
-        this.lobby.show('reveal', { partner, again: v.me_again, theyAgain: v.they_again });
-        this.game.reframeReveal();
+        if (this.me && v.mine_after) { this.me.look = v.mine_after; this.me.gen = (this.me.gen || 0) + 1; } // what I bring next
+        this.showReveal(true);
+      } else if (!old || old.me_again !== v.me_again || old.they_again !== v.they_again || rx('me', old) !== rx('me', v) || rx('them', old) !== rx('them', v)) {
+        this.showReveal(false);
+      }
+      // they just said what they think of my work
+      const got = rx('them', v);
+      if (got && got !== rx('them', old && old.id === v.id && old.round === v.round ? old : null)) {
+        this.game.ui.toast(`${partner}: ${REACT_LABEL[got]}`);
+        this.game.cheer(got);
       }
     }
+  }
+  // the reveal sheet, and which character is in the chair (relook: put it there again)
+  showReveal(relook) {
+    const v = this.match;
+    if (!v) return;
+    const rx = (who) => { const r = v.reactions.find((x) => x.from === who); return r ? r.kind : null; };
+    this.lobby.show('reveal', {
+      partner: v.partner || 'They', seeing: this.seeing, mine: rx('me'), theirs: rx('them'),
+      again: v.me_again, theyAgain: v.they_again,
+    });
+    if (relook) {
+      const [a, b] = this.seeing === 'theirs' ? [v.theirs, v.theirs_after] : [v.mine, v.mine_after];
+      this.seated = null;
+      if (a && b) this.game.revealLooks(a, b, this.below);
+    }
+    this.game.reframeReveal();
+  }
+  // switch the reveal between my character and theirs
+  see(which) {
+    if (!this.match || this.match.state !== 'reveal' || which === this.seeing) return;
+    this.seeing = which === 'theirs' ? 'theirs' : 'mine';
+    this.showReveal(true);
   }
   beginTurn(v) {
     this.turn = `${v.id}:${v.round}`;
@@ -309,7 +370,7 @@ export class Multi {
     this.lobby.hide();
     this.seated = null;
     const secs = Math.max(5, (v.endsAt - Date.now()) / 1000);
-    this.game.startSalon(v.theirs, { mp: true, secs, onEnd: (after) => this.handIn(after) });
+    this.game.startSalon(v.theirs, { mp: true, secs, endsAt: v.endsAt, onEnd: (after) => this.handIn(after) });
     this.game.setLive(v.mine);
   }
   // the bell: what I made of their character goes in

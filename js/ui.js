@@ -446,7 +446,10 @@ export class UI {
     const W = window.innerWidth, H = window.innerHeight;
     const hud = this.el.hud;
     const top = hud.offsetTop + hud.offsetHeight + 6;
-    if (mode === 'reveal') return { top: Math.max(top, 64), bottom: below + 24, left: 0, right: 0 }; // the salon's before and after
+    if (mode === 'reveal') { // the salon's before and after, and the multiplayer sheet (the level bar is hidden then)
+      const bare = document.body.classList.contains('lb-on') || document.body.classList.contains('sl-on');
+      return { top: bare ? 64 : Math.max(top, 64), bottom: below + 24, left: 0, right: 0 };
+    }
     if (mode === 'results') {
       const p = this.el.results;
       const wide = W >= 760 && W / H > 1.05;

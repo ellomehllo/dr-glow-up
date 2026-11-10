@@ -74,4 +74,13 @@ outside network calls).
    p2.localhost with ?debug&cloud): random match, invite link, typed code, wrong/own/full
    codes, guess limit, live window, reveal, again, leaving mid-turn.
 5. Reveal, reactions, rematch, next and lineage.
+   Done 2026-11-10: reveal has a Yours/Theirs switch; owner reacts (love it / funny / ruined),
+   the other player gets a toast and a little effect; again and next as in milestone 4;
+   lobby shows History (each version, who changed it) and Your work (reactions received).
+   Migration 20261113090000_lineage applied (backup in ~/Developer/marblemaxx-backups/2026-11-10-before-lineage).
 6. Polish, then deploy.
+   Polish done 2026-11-10: the turn clock follows the server's end time (right after a hidden
+   tab), closer framing above the sheet, Escape goes back, a removed player's session starts a
+   new player, docs and tests kept off the site (.assetsignore).
+   Checks: tests/mp-test.sh runs tests/mp-api.mjs (34 checks on the live functions with
+   throwaway players) and removes them with tests/mp-cleanup.sh.

@@ -82,9 +82,8 @@ window.__multi = multi;
 // an invite link (?room=CODE): straight into joining that room (the code leaves the address)
 const room = cleanCode(qs.get('room'));
 if (qs.has('room')) {
-  qs.delete('room');
-  const rest = qs.toString();
-  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  const rest = location.search.replace(/([?&])room=[^&]*&?/, '$1').replace(/[?&]$/, '');
+  history.replaceState(null, '', location.pathname + rest + location.hash);
 }
 if (room && multi.available) multi.open({ code: room });
 // ?mp: the multiplayer character creator on its own (testing)

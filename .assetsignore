@@ -9,3 +9,5 @@ supabase
 cloudflare
 wrangler.jsonc
 README.md
+tests
+*.md

@@ -29,7 +29,14 @@ export const LB_ICON = {
   again: I('<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/>'),
   next: I('<path d="M5 12h13M13 6l6 6-6 6"/>'),
   edit: I('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'),
+  love: I('<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/>'),
+  funny: I('<circle cx="12" cy="12" r="8.5"/><path d="M8 10.2l1.6-1.2M8 10.2l1.6 1.2M16 10.2l-1.6-1.2M16 10.2l-1.6 1.2"/><path d="M7.8 13.6h8.4a4.2 4.2 0 0 1-8.4 0z"/>'),
+  ruined: I('<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/><path d="M12 7.4l-1.6 3.4 3 2-1.8 3.4"/>'),
+  history: I('<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/><path d="M12 8v4.5l3 1.8"/>'),
+  older: I('<path d="M15 5l-7 7 7 7"/>'),
+  newer: I('<path d="M9 5l7 7-7 7"/>'),
 };
+export const REACT_LABEL = { love: 'LOVE IT', funny: 'FUNNY', ruined: 'RUINED' };
 
 const NOTE = {
   'no such room': 'No room with that code. Check it and try again.',
@@ -73,6 +80,12 @@ export class Lobby {
       if (inp) act('join-code', cleanCode(inp.value));
     });
     this.screen = null;
+    // Escape: the sheet's back button, when it has one
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !this.open) return;
+      const back = this.sheet.querySelector('.lb-head .lb-x[data-act]');
+      if (back) { e.preventDefault(); act(back.dataset.act); }
+    });
   }
 
   showButton(on) { this.btn.hidden = !on; }
@@ -111,6 +124,8 @@ export class Lobby {
     const btn = (act, icon, label, cls = '', extra = '') => `<button type="button" class="lb-btn ${cls}" data-act="${act}" ${extra}>${LB_ICON[icon]}<span>${label}</span></button>`;
     const head = (title, back = 'home') => `<header class="lb-head">${back ? `<button type="button" class="lb-x" data-act="${back}" aria-label="Back">${LB_ICON.back}</button>` : '<span class="lb-x-gap"></span>'}<h2>${title}</h2><span class="lb-x-gap"></span></header>`;
     const spin = '<span class="lb-spin" aria-hidden="true"></span>';
+    const tally = (g) => (g && (g.love || g.funny || g.ruined) ? `<p class="lb-tally" aria-label="Your work: ${g.love} love it, ${g.funny} funny, ${g.ruined} ruined">
+      <span>YOUR WORK</span>${['love', 'funny', 'ruined'].map((k) => `<i>${LB_ICON[k]}<b>${g[k]}</b></i>`).join('')}</p>` : '');
     const esc = (t) => String(t || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
     switch (screen) {
       case 'home':
@@ -122,9 +137,21 @@ export class Lobby {
             ${btn('search', 'anyone', 'PLAY WITH ANYONE', '', d.busy ? 'disabled' : '')}
           </div>
           <div class="lb-row lb-small">
+            ${d.gen > 0 ? btn('history', 'history', 'HISTORY', 'lb-ghost') : ''}
             ${btn('edit', 'edit', 'NEW CHARACTER', 'lb-ghost')}
           </div>
+          ${tally(d.got)}
           <p class="lb-say">${esc(d.say || '')}</p>`;
+      case 'history': {
+        const h = d.item || {};
+        return `${head('YOUR CHARACTER')}
+          <div class="lb-row lb-hist">
+            <button type="button" class="lb-x" data-act="hist" data-v="older" aria-label="Older" ${d.i >= d.n - 1 ? 'disabled' : ''}>${LB_ICON.older}</button>
+            <p class="lb-who"><b>${d.i === 0 ? 'NOW' : `${d.i} ${d.i === 1 ? 'TURN' : 'TURNS'} AGO`}</b><br>${esc(h.by ? `after ${h.by}` : 'as you made it')}</p>
+            <button type="button" class="lb-x" data-act="hist" data-v="newer" aria-label="Newer" ${d.i <= 0 ? 'disabled' : ''}>${LB_ICON.newer}</button>
+          </div>
+          <p class="lb-say">${esc(d.n > 1 ? `${d.n - 1} ${d.n === 2 ? 'player has' : 'players have'} worked on your character.` : 'No one has worked on it yet.')}</p>`;
+      }
       case 'invite':
         return `${head('INVITE A FRIEND', 'cancel-room')}
           ${d.code ? `<p class="lb-code" aria-label="Room code ${esc(d.code.split('').join(' '))}">${esc(d.code)}</p>
@@ -157,14 +184,24 @@ export class Lobby {
         return `<p class="lb-count" aria-live="assertive">${esc(d.n)}</p><p class="lb-say">Work on ${esc(d.partner)}'s character</p>`;
       case 'wait':
         return `<p class="lb-say lb-top">TIME'S UP</p><p class="lb-wait">${spin}</p><p class="lb-say">${esc(d.say || `Waiting for ${d.partner}...`)}</p>`;
-      case 'reveal':
-        return `<p class="lb-say lb-top">${esc(String(d.partner || '').toUpperCase())} WORKED ON YOUR CHARACTER</p>
+      case 'reveal': {
+        const P = esc(String(d.partner || '').toUpperCase());
+        const mine = d.seeing !== 'theirs';
+        const rx = (k) => `<button type="button" class="lb-btn lb-rx${d.mine === k ? ' on' : ''}" data-act="react" data-v="${k}" aria-pressed="${d.mine === k}">${LB_ICON[k]}<span>${REACT_LABEL[k]}</span></button>`;
+        return `<div class="lb-seg" role="tablist" aria-label="Whose character">
+            <button type="button" role="tab" data-act="see" data-v="mine" aria-selected="${mine}" class="${mine ? 'on' : ''}">YOURS</button>
+            <button type="button" role="tab" data-act="see" data-v="theirs" aria-selected="${!mine}" class="${mine ? '' : 'on'}">THEIRS</button>
+          </div>
+          <p class="lb-say lb-top">${mine ? `${P} WORKED ON YOURS` : `WHAT YOU DID TO ${P}'S`}</p>
+          ${mine ? `<div class="lb-row lb-rxs" role="group" aria-label="What do you think?">${rx('love')}${rx('funny')}${rx('ruined')}</div>`
+            : `<p class="lb-said">${d.theirs ? `${LB_ICON[d.theirs]}<span>${esc(d.partner)}: <b>${REACT_LABEL[d.theirs]}</b></span>` : `<span>Waiting for ${esc(d.partner)} to react...</span>`}</p>`}
           <div class="lb-row">
             ${btn('again', 'again', d.again ? 'WAITING' : 'AGAIN', '', d.again ? 'disabled' : '')}
             ${btn('next', 'next', 'NEXT', 'lb-main lb-pink')}
           </div>
           <div class="lb-row lb-small">${btn('home', 'close', 'LEAVE', 'lb-ghost')}</div>
-          <p class="lb-say">${esc(d.say || (d.theyAgain ? `${d.partner} wants to go again.` : 'Your character keeps this look for the next player.'))}</p>`;
+          <p class="lb-say">${esc(d.say || (d.theyAgain ? `${d.partner} wants to go again.` : mine && !d.mine ? 'What do you think?' : mine ? 'Your character keeps this look for the next player.' : `${d.partner} keeps this look for their next player.`))}</p>`;
+      }
       case 'note':
         return `${head(d.title || 'MULTIPLAYER', d.back || 'home')}
           <p class="lb-say">${esc(d.say)}</p>

@@ -553,3 +553,28 @@
   @keyframes lb-pulse { 50% { opacity: .4; } }
 }
 @media (hover: hover) { .lb-btn:not(:disabled):not(.lb-pink):hover, .lb-x:hover { background: #faf7fc; } }
+/* reveal: whose character, reactions; lobby: tally, history */
+.lb-seg { display: flex; gap: 4px; padding: 4px; border-radius: 16px; background: rgba(58, 39, 71, .06); }
+.lb-seg button {
+  flex: 1; height: 36px; border: 1px solid transparent; border-radius: 12px; cursor: pointer;
+  font: 700 14px/1 Fredoka, system-ui, sans-serif; letter-spacing: .08em; color: var(--muted); background: transparent;
+  -webkit-tap-highlight-color: transparent; transition-property: background-color, color; transition-duration: .15s; transition-timing-function: ease-out;
+}
+.lb-seg button.on { color: var(--ink); background: #fff; box-shadow: var(--sh-1); }
+.lb-seg button:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.lb-rxs .lb-btn { flex-direction: column; gap: 4px; height: 64px; padding: 0 6px; font-size: 13px; }
+.lb-rxs .lb-i { width: 26px; height: 26px; }
+.lb-rx[data-v="love"] .lb-i { color: var(--pink); }
+.lb-rx[data-v="funny"] .lb-i { color: var(--gold-deep); }
+.lb-rx[data-v="ruined"] .lb-i { color: #8a7c9a; }
+.lb-rx.on { background: #fff0f7; box-shadow: 0 0 0 2px var(--pink), var(--sh-1); color: var(--ink); }
+.lb-said { margin: 0; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; color: var(--ink-2); }
+.lb-said .lb-i { width: 26px; height: 26px; color: var(--pink); }
+.lb-tally { margin: 0; display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 13px; color: var(--muted); }
+.lb-tally span { font-weight: 700; letter-spacing: .12em; }
+.lb-tally i { display: inline-flex; align-items: center; gap: 3px; font-style: normal; }
+.lb-tally .lb-i { width: 18px; height: 18px; }
+.lb-tally b { font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.lb-hist { align-items: center; }
+.lb-hist .lb-who { flex: 1; line-height: 1.35; }
+.lb-x:disabled { opacity: .35; cursor: default; }

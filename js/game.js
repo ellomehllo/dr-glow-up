@@ -769,7 +769,14 @@ export class Game {
   // keep the character clear of the multiplayer sheet (after it changes size)
   frameLook(snap = false) {
     this.director.setObstruction(this.ui.obstruction('reveal', this.revealBelow()), snap);
-    this.director.go(this.view({ x: 0, y: 40, r: 360, rel: true }), snap ? 0.6 : 0.4);
+    this.director.go(this.view({ x: 0, y: -30, r: 200, rel: true }), snap ? 0.6 : 0.4);
+  }
+  // the other player's reaction to my work lands: a little show on the character in the chair
+  cheer(kind) {
+    const c = headToStage(this.s, 0, -80);
+    if (kind === 'love') { this.fx.glitter(c.x, c.y, 18, 380); this.fx.burst(c.x, c.y, 10, 300); this.audio.boing(1.2); }
+    else if (kind === 'funny') { this.fx.burst(c.x, c.y, 14, 420); this.s.hopV = -520; this.audio.boing(1.4); }
+    else { this.director.shake(0.25); this.audio.thud(); }
   }
   // the sheet under a before and after changed size
   reframeReveal() {
@@ -1431,7 +1438,8 @@ export class Game {
     }
     if (this.mode === 'creator' && this.creator) this.creator.tick(dt, this.pointer());
     if (this.salon && !this.salon.over && PLAYING.has(this.mode)) {
-      this.salon.left -= dt;
+      // a multiplayer turn ends when the server says, even if this tab was hidden a while
+      this.salon.left = this.salon.o.endsAt ? (this.salon.o.endsAt - Date.now()) / 1000 : this.salon.left - dt;
       this.salonUI.tick(this.salon.left);
       if (this.salon.left <= 0) this.endSalon();
     }
