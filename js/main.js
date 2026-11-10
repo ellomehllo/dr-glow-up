@@ -29,6 +29,7 @@ const input = new HoldInput(document.body);
 let game = null;
 
 const ui = new UI(document.getElementById('ui'), {
+  onMode: (m) => game && game.chooseMode(m),
   onGesture: () => audio.init(),
   onMute: (m) => audio.setMuted(m),
   onAgain: () => game && game.retry(),
@@ -75,6 +76,9 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
+// the start menu (single player or multiplayer) where multiplayer runs; ?debug runs skip it
+// unless &menu is given
+game.menuWanted = cloud.on && (!qs.has('debug') || qs.has('menu'));
 game.start();
 // multiplayer (multi.js): the people button in the top bar; where the cloud runs
 const multi = new Multi(game, cloud, document.getElementById('ui'));

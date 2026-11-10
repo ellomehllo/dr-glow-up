@@ -51,6 +51,7 @@ export class Multi {
   // o.code: join that room straight away (an invite link)
   async open(o = {}) {
     if (!this.mp.on) return;
+    this.game.closeMenu();
     this.on = true;
     this.pendingCode = o.code || null;
     this.game.showLook(null, this.below);
@@ -104,7 +105,7 @@ export class Multi {
     this.lobby.hide();
     this.game.belowFn = null;
     this.game.setLive(null);
-    this.game.startLevel(this.game.level);
+    if (this.game.menuWanted) this.game.toMenu(); else this.game.startLevel(this.game.level);
   }
   // let go of whatever we were in (room, queue, match)
   drop() {
@@ -153,6 +154,43 @@ export class Multi {
     const me = this.me || {};
     this.lobby.show('home', { name: me.name, gen: me.gen || 0, got: me.got, say });
     this.game.frameLook();
+  }
+  // ---------- naming: one word from each of two lists ----------
+  async nameScreen() {
+    this.setPhase('name');
+    const ep = this.epoch;
+    const [first = '', second = ''] = ((this.me && this.me.name) || '').split(' ');
+    this.naming = { first, second, words: this.words || null };
+    this.showName({ say: 'Loading...' });
+    try {
+      if (!this.words) this.words = await this.mp.nameWords();
+      if (ep !== this.epoch) return;
+      this.naming.words = this.words;
+      this.showName();
+    } catch { if (ep === this.epoch) this.home('Could not load names. Try again.'); }
+  }
+  showName(o = {}) {
+    const n = this.naming;
+    this.lobby.show('name', { first: n.first, second: n.second, words: n.words, ...o });
+    this.game.frameLook();
+    // keep the chosen words in view in their rows
+    for (const c of this.lobby.sheet.querySelectorAll('.lb-chip.on')) c.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }
+  nameDice() {
+    const w = this.naming.words;
+    if (!w) return;
+    const any = (l) => l[Math.floor(Math.random() * l.length)];
+    this.naming.first = any(w.first); this.naming.second = any(w.second);
+    this.showName();
+  }
+  async nameSave() {
+    const n = this.naming, ep = this.epoch;
+    try {
+      const r = await this.mp.setName(n.first, n.second);
+      if (ep !== this.epoch) return;
+      if (this.me) this.me.name = r.name;
+      this.home(`You are now ${r.name}.`);
+    } catch { if (ep === this.epoch) this.showName({ say: 'Could not save the name. Try again.', bad: true }); }
   }
   // my character's history, one version at a time in the chair
   async history() {
@@ -229,6 +267,11 @@ export class Multi {
       case 'retry': this.open(); break;
       case 'home': this.home(); break;
       case 'history': this.history(); break;
+      case 'name': this.nameScreen(); break;
+      case 'name-first': this.naming.first = v; this.showName(); break;
+      case 'name-second': this.naming.second = v; this.showName(); break;
+      case 'name-dice': this.nameDice(); break;
+      case 'name-save': this.nameSave(); break;
       case 'hist': this.histAt(this.histI + (v === 'older' ? 1 : -1)); break;
       case 'see': this.see(v); break;
       case 'react': this.call((id) => this.mp.react(id, v)); break;

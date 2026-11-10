@@ -254,8 +254,34 @@ export class Game {
     this.ui.setPass(LEVELS[this.level].pass);
     this.refreshKit();
     this.ui.titleCard(true);
+    if (this.menuWanted) this.openMenu();
     this.sayWish(2.6);
     react(this.s, 'normal', 0.01);
+  }
+  // ---------- the start menu (single player or multiplayer; only where multiplayer runs) ----------
+  openMenu() {
+    this.menuOn = true;
+    this.ui.showModes(true, this.level + 1);
+    this.director.setObstruction(this.ui.obstruction('intro'));
+  }
+  closeMenu() {
+    if (!this.menuOn) return;
+    this.menuOn = false;
+    this.ui.showModes(false);
+  }
+  chooseMode(m) {
+    if (!this.menuOn) return;
+    this.closeMenu();
+    if (m === 'multi' && this.multi) this.multi.open();
+    else this.toPick();
+  }
+  // back from multiplayer: the clinic with the start menu up
+  toMenu() {
+    this.startLevel(this.level);
+    this.timers = [];
+    this.setMode('intro');
+    this.ui.titleCard(true);
+    this.openMenu();
   }
 
   // ---------- the kit ----------
@@ -1388,6 +1414,7 @@ export class Game {
   onDown(src) {
     this.audio.init();
     if (this.tut && this.tut.active) return; // a coach mark is up: it takes the press
+    if (this.menuOn) return; // the start menu takes a choice, not a press
     const m = this.mode;
     if (m === 'creator') { if (src !== 'key') this.creator.down(this.pointer()); return; }
     // with the kit open, presses land on the kit; only Space gets here (it closes the kit)
@@ -1447,7 +1474,7 @@ export class Game {
     let prog = g.prog;
     switch (this.mode) {
       case 'intro':
-        if (this.modeT > 2.4) this.toPick();
+        if (this.modeT > 2.4 && !this.menuOn) this.toPick(); // with the start menu up, it waits for a choice
         break;
       case 'arrive':
         if (this.modeT > ARRIVE) this.toPick();

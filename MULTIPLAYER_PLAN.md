@@ -82,5 +82,9 @@ outside network calls).
    Polish done 2026-11-10: the turn clock follows the server's end time (right after a hidden
    tab), closer framing above the sheet, Escape goes back, a removed player's session starts a
    new player, docs and tests kept off the site (.assetsignore).
+   After launch (2026-11-10): a start menu on the title card (Single player / Multiplayer, waits
+   for a choice; only where multiplayer runs), and naming your character from two word lists
+   (no typing: names stay safe), migration 20261114090000_names. tests/db-backup.sh <label>
+   exports the live DB before a migration.
    Checks: tests/mp-test.sh runs tests/mp-api.mjs (34 checks on the live functions with
    throwaway players) and removes them with tests/mp-cleanup.sh.

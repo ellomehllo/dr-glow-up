@@ -60,6 +60,15 @@ ok('a bad look is refused', !!(await A.rpc('mp_save', { p_look: { v: 2 } })).err
 for (const [p, tag] of [[A, 'A0'], [B, 'B0'], [C, 'C0']]) await p.rpc('mp_save', { p_look: look(tag) });
 ok('mp_me returns the saved character', (await A.rpc('mp_me')).look.who.tag === 'A0');
 
+console.log('names');
+const words = await A.rpc('mp_name_words');
+ok('name words: two lists of 24', words.first.length === 24 && words.second.length === 24, words);
+const [w1, w2] = me.name.split(' ');
+ok('starting names come from the lists', words.first.includes(w1) && words.second.includes(w2), me.name);
+ok('a name from the lists is taken', (await B.rpc('mp_set_name', { p_first: 'Sparkly', p_second: 'Dragon' })).name === 'Sparkly Dragon');
+ok('a word not on the lists is refused', !!(await B.rpc('mp_set_name', { p_first: 'Sparkly', p_second: 'Rude' })).err);
+ok('mp_me shows the new name', (await B.rpc('mp_me')).name === 'Sparkly Dragon');
+
 console.log('privacy');
 ok('tables are closed', (await fetch(`${API}/rest/v1/mp_matches?select=id`, { headers: H(A.t) })).status === 403);
 ok('helpers are not callable', (await fetch(`${API}/rest/v1/rpc/mp_view`, { method: 'POST', headers: H(A.t), body: '{}' })).status === 404);
@@ -68,6 +77,7 @@ console.log('random match');
 ok('first searcher waits', (await A.rpc('mp_join')) === null);
 let vb = await B.rpc('mp_join');
 ok('second searcher is matched with the first', vb && vb.state === 'preview' && vb.theirs.who.tag === 'A0', vb);
+ok('the partner sees the chosen name', (await A.rpc('mp_join')).partner === 'Sparkly Dragon');
 const m1 = vb.id;
 ok('the first searcher sees the same match', (await A.rpc('mp_join')).id === m1);
 ok('a stranger cannot see it', (await C.rpc('mp_state', { p_match: m1 })).err === 'no such match');

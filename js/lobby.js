@@ -32,6 +32,7 @@ export const LB_ICON = {
   love: I('<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/>'),
   funny: I('<circle cx="12" cy="12" r="8.5"/><path d="M8 10.2l1.6-1.2M8 10.2l1.6 1.2M16 10.2l-1.6-1.2M16 10.2l-1.6 1.2"/><path d="M7.8 13.6h8.4a4.2 4.2 0 0 1-8.4 0z"/>'),
   ruined: I('<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/><path d="M12 7.4l-1.6 3.4 3 2-1.8 3.4"/>'),
+  dice: I('<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r=".6"/><circle cx="15" cy="15" r=".6"/><circle cx="15" cy="9" r=".6"/><circle cx="9" cy="15" r=".6"/><circle cx="12" cy="12" r=".6"/>'),
   history: I('<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/><path d="M12 8v4.5l3 1.8"/>'),
   older: I('<path d="M15 5l-7 7 7 7"/>'),
   newer: I('<path d="M9 5l7 7-7 7"/>'),
@@ -130,7 +131,7 @@ export class Lobby {
     switch (screen) {
       case 'home':
         return `${head('MULTIPLAYER', 'leave')}
-          <p class="lb-who">You are <b>${esc(d.name || '...')}</b></p>
+          <p class="lb-who lb-me">You are <b>${esc(d.name || '...')}</b>${d.name ? `<button type="button" class="lb-x lb-pen" data-act="name" aria-label="Change your name">${LB_ICON.edit}</button>` : ''}</p>
           <div class="lb-col">
             ${btn('invite', 'invite', 'INVITE A FRIEND', 'lb-main lb-pink', d.busy ? 'disabled' : '')}
             ${btn('join', 'code', 'JOIN WITH A CODE', '', d.busy ? 'disabled' : '')}
@@ -142,6 +143,19 @@ export class Lobby {
           </div>
           ${tally(d.got)}
           <p class="lb-say">${esc(d.say || '')}</p>`;
+      case 'name': {
+        const w = d.words || { first: [], second: [] };
+        const chips = (list, on, act) => list.map((x) => `<button type="button" class="lb-chip${x === on ? ' on' : ''}" data-act="${act}" data-v="${esc(x)}" aria-pressed="${x === on}">${esc(x)}</button>`).join('');
+        return `${head('NAME YOUR CHARACTER')}
+          <p class="lb-who lb-big"><b>${esc(`${d.first || ''} ${d.second || ''}`.trim() || '...')}</b></p>
+          <div class="lb-chips" role="group" aria-label="First word">${chips(w.first, d.first, 'name-first')}</div>
+          <div class="lb-chips" role="group" aria-label="Second word">${chips(w.second, d.second, 'name-second')}</div>
+          <div class="lb-row">
+            ${btn('name-dice', 'dice', 'RANDOM')}
+            ${btn('name-save', 'check', 'SAVE', 'lb-main lb-pink', d.first && d.second ? '' : 'disabled')}
+          </div>
+          <p class="lb-say${d.bad ? ' bad' : ''}">${esc(d.say || 'Pick one word from each row.')}</p>`;
+      }
       case 'history': {
         const h = d.item || {};
         return `${head('YOUR CHARACTER')}

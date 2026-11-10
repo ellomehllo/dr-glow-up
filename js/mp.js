@@ -47,6 +47,10 @@ export class Mp {
     const r = await this.rpc('mp_history');
     return Array.isArray(r) ? r.filter((h) => h && validLook(h.look)) : [];
   }
+  // the words names are made from: { first: [...], second: [...] }
+  nameWords() { return this.rpc('mp_name_words'); }
+  // my name, one word from each list: { name }
+  setName(first, second) { return this.rpc('mp_set_name', { p_first: first, p_second: second }); }
   // keep the creator's character as the one I bring
   save(look) {
     if (!validLook(look)) return Promise.reject(new Error('bad look'));

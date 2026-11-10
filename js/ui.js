@@ -12,7 +12,7 @@ import { wishMark } from './style.js';
 const VERDICT = { perfect: 'PERFECT!', good: 'NICE!', early: 'TOO EARLY', late: 'TOO LATE', messy: 'MESSY!', over: 'TOO MUCH!' };
 
 export class UI {
-  constructor(root, { onMute, onAgain, onNext, onSplit, onGesture, onKit, onKitPick, onKitClose, onSwatch, onStyleDone, onUnlockPlay }) {
+  constructor(root, { onMode, onMute, onAgain, onNext, onSplit, onGesture, onKit, onKitPick, onKitClose, onSwatch, onStyleDone, onUnlockPlay }) {
     this.root = root;
     // logo letters; `o` keeps the wave delay running on across words
     const letters = (w, o = 0) => [...w].map((c, i) => `<span style="--i:${i + o}" aria-hidden="true">${c}</span>`).join('');
@@ -32,6 +32,10 @@ export class UI {
       <div class="title-card">
         <h1 class="tc-logo" aria-label="Dr. Glow Up"><span class="w0">${letters('DR.', 0)}</span><span class="w1">${letters('GLOW', 3)}</span><span class="w2">${letters('UP', 7)}</span></h1>
         <div class="tc-go">${ICONS.hand}<span>HOLD TO START</span></div>
+        <div class="tc-modes" role="group" aria-label="Choose how to play">
+          <button class="tc-mode tc-solo" data-ui type="button" data-mode="solo">${ICONS.play}<span><b>SINGLE PLAYER</b><small class="tc-lv">LEVEL 1</small></span></button>
+          <button class="tc-mode tc-multi" data-ui type="button" data-mode="multi">${ICONS.people}<span><b>MULTIPLAYER</b><small>PLAY WITH FRIENDS</small></span></button>
+        </div>
       </div>
       <div class="splash" aria-live="polite"><div class="sp-in"><span class="sp-ch"></span><span class="sp-k">LEVEL</span><b class="sp-n">1</b></div><div class="sp-new"></div></div>
       <div class="dock">
@@ -90,7 +94,7 @@ export class UI {
     this.el = {
       hud: q('.hud-top'), bar: q('.bar'), mute: q('.mute'), num: q('.aura-num'), fill: q('.aura-fill'), aura: q('.aura'),
       lvls: q('.lvls'), lvlN: q('.lv-n'), stepsList: q('.steps'), steps: [],
-      title: q('.title-card'), splash: q('.splash'), spN: q('.sp-n'), spK: q('.sp-k'), spCh: q('.sp-ch'), spNew: q('.sp-new'),
+      title: q('.title-card'), modes: q('.tc-modes'), modeLv: q('.tc-lv'), splash: q('.splash'), spN: q('.sp-n'), spK: q('.sp-k'), spCh: q('.sp-ch'), spNew: q('.sp-new'),
       dock: q('.dock'), card: q('.card'), pass: q('.aura-track .pass'), rsNew: q('.rs-new'),
       prompt: q('.prompt'), prIco: q('.pr-ico'), prText: q('.pr-text'),
       zone: q('.mt-zone'), mfill: q('.mt-fill'), star: q('.mt-star'), toast: q('.toast'),
@@ -129,6 +133,12 @@ export class UI {
     // the new-tool pop-up
     e.ulPlay.addEventListener('click', () => { onGesture && onGesture(); this.hideUnlock(); onUnlockPlay(); });
     for (const el of [e.ulX, e.ulScrim]) el.addEventListener('click', () => this.hideUnlock());
+    // the start menu: single player or multiplayer
+    e.modes.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    e.modes.addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-mode]');
+      if (b && onMode) { onGesture && onGesture(); onMode(b.dataset.mode); }
+    });
     window.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Escape') return;
       if (this.unlockOpen) this.hideUnlock(); else if (this.kitOpen) onKitClose();
@@ -147,6 +157,12 @@ export class UI {
     this.el.mute.setAttribute('aria-label', m ? 'Unmute sound' : 'Mute sound');
   }
   titleCard(on) { this.el.title.classList.toggle('on', on); }
+  // the start menu on the title card (level: the one single player carries on from)
+  showModes(on, level = 1) {
+    this.el.title.classList.toggle('modes', on);
+    this.el.modeLv.textContent = `LEVEL ${level}`;
+    if (on && !matchMedia('(pointer: coarse)').matches) this.el.title.querySelector('.tc-solo').focus({ preventScroll: true });
+  }
   // only the level being played is shown: a badge with its number that pops when it changes
   setLevel(n) {
     const t = String(n + 1);
