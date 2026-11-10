@@ -7,9 +7,11 @@ const SFX = ['pop', 'splat', 'boing', 'tink', 'nick', 'shing', 'sparkle', 'lock'
   'tick', 'stamp', 'success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud', 'flash'];
 const PITCHED = new Set(['pop', 'boing', 'tink', 'zap', 'knock']); // first argument is a pitch
 // recorded clips are mastered loud; these keep them under the music and the voices
-const SFX_VOL = { pop: 0.45, splat: 0.5, boing: 0.35, tink: 0.3, nick: 0.45, shing: 0.3, sparkle: 0.3, lock: 0.45, zap: 0.35,
-  knock: 0.45, oink: 0.5, drip: 0.4, tick: 0.35, stamp: 0.5, success: 0.45, perfect: 0.4, fail: 0.45, fanfare: 0.4,
-  cheer: 0.35, thud: 0.5, flash: 0.35 };
+const SFX_VOL = { pop: 0.26, splat: 0.28, boing: 0.18, tink: 0.14, nick: 0.24, shing: 0.13, sparkle: 0.15, lock: 0.24, zap: 0.16,
+  knock: 0.24, oink: 0.28, drip: 0.22, tick: 0.18, stamp: 0.28, success: 0.26, perfect: 0.22, fail: 0.24, fanfare: 0.22,
+  cheer: 0.18, thud: 0.3, flash: 0.17 };
+// every clip plays a little lower than recorded: rounder, less piercing
+const SFX_RATE = 0.93;
 // big moments: while one rings, another of these is skipped instead of piling on
 const STINGER = new Set(['success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud', 'flash', 'stamp']);
 // six adult voices (3 men, 3 women), each saying a handful of short words
@@ -70,8 +72,10 @@ export class Sound {
     this.last[n] = t;
     const src = this.ctx.createBufferSource(); src.buffer = b;
     // the synth pitches went up to 2x; on recordings that turns squeaky, so only nudge them
-    if (PITCHED.has(n) && typeof pitch === 'number') src.playbackRate.value = Math.max(0.88, Math.min(1.12, Math.pow(pitch, 0.25)));
-    const g = this.ctx.createGain(); g.gain.value = SFX_VOL[n] || 0.4;
+    // the synth pitches went up to 2x; on recordings that turns squeaky, so only nudge them, and never above the base
+    const nudge = PITCHED.has(n) && typeof pitch === 'number' ? Math.max(0.88, Math.min(1, Math.pow(pitch, 0.2))) : 1;
+    src.playbackRate.value = SFX_RATE * nudge;
+    const g = this.ctx.createGain(); g.gain.value = SFX_VOL[n] || 0.22;
     src.connect(g).connect(this.sfxBus); src.start(t);
     return true;
   }
@@ -89,7 +93,7 @@ export class Sound {
     this.lineAt[what] = t + COOL[what];
     const src = this.ctx.createBufferSource(); src.buffer = b; src.playbackRate.value = rate;
     const g = this.ctx.createGain(); g.gain.value = 0.85;
-    src.connect(g); this._out(g, 0.03); src.start(t);
+    src.connect(g).connect(this.voiceBus); src.start(t);
     this.sfxBus.gain.cancelScheduledValues(t);
     this.sfxBus.gain.setTargetAtTime(0.5, t, 0.02);
     this.sfxBus.gain.setTargetAtTime(1, t + b.duration / rate, 0.1);
@@ -119,11 +123,17 @@ export class Sound {
     comp.threshold.value = -12; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.2;
     this.master.connect(comp).connect(ctx.destination);
     this.dry = ctx.createGain(); this.dry.connect(this.master);
-    // clips go through a gentle low-pass (no ear-piercing top end) and duck under voices
+    // clips go through a warm low-pass (no ear-piercing top end) and duck under voices
     this.sfxBus = ctx.createGain();
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; lp.Q.value = 0.5;
-    const shelf = ctx.createBiquadFilter(); shelf.type = 'highshelf'; shelf.frequency.value = 2800; shelf.gain.value = -5;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3400; lp.Q.value = 0.4;
+    const shelf = ctx.createBiquadFilter(); shelf.type = 'highshelf'; shelf.frequency.value = 2000; shelf.gain.value = -9;
     this.sfxBus.connect(shelf).connect(lp).connect(this.master);
+    // voices: quieter, with the hard 's' and shout edges taken off
+    this.voiceBus = ctx.createGain(); this.voiceBus.gain.value = 0.45;
+    const vlp = ctx.createBiquadFilter(); vlp.type = 'lowpass'; vlp.frequency.value = 4200; vlp.Q.value = 0.4;
+    const vsh = ctx.createBiquadFilter(); vsh.type = 'highshelf'; vsh.frequency.value = 2400; vsh.gain.value = -7;
+    const vcomp = ctx.createDynamicsCompressor(); vcomp.threshold.value = -26; vcomp.ratio.value = 5; vcomp.attack.value = 0.004; vcomp.release.value = 0.15;
+    this.voiceBus.connect(vcomp).connect(vsh).connect(vlp).connect(this.master);
     const len = Math.floor(ctx.sampleRate * 1.2), ir = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.6); }
     this.verb = ctx.createConvolver(); this.verb.buffer = ir;
@@ -171,8 +181,8 @@ export class Sound {
   _buildLoops() {
     const ctx = this.ctx;
     // the tool loops (scrub, laser, polish, hum...) share a soft bus: quieter, no harsh top end
-    const soft = ctx.createGain(); soft.gain.value = 0.6;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.4;
+    const soft = ctx.createGain(); soft.gain.value = 0.2;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700; lp.Q.value = 0.3;
     soft.connect(lp); this._out(lp, 0.12);
     const mk = (name, chain, verb = 0.1) => {
       const g = ctx.createGain(); g.gain.value = 0;
@@ -182,7 +192,7 @@ export class Sound {
     };
     // scrub: soft soapy hiss (bubble blips come from grains)
     mk('scrub', (g) => {
-      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2200; f.Q.value = 0.6;
+      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.5;
       const am = ctx.createGain(); am.gain.value = 0.6;
       const lfo = ctx.createOscillator(); lfo.frequency.value = 7; const d = ctx.createGain(); d.gain.value = 0.4; lfo.connect(d).connect(am.gain); lfo.start();
       n.connect(f).connect(am).connect(g); n.start();
@@ -202,9 +212,9 @@ export class Sound {
     }, 0.25);
     // comb: quick bristly strokes
     mk('rasp', (g) => {
-      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 4200; f.Q.value = 2.2;
+      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1300; f.Q.value = 0.8;
       const am = ctx.createGain(); am.gain.value = 0.5;
-      const lfo = ctx.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 16;
+      const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 9;
       const depth = ctx.createGain(); depth.gain.value = 0.5; lfo.connect(depth).connect(am.gain); lfo.start();
       n.connect(f).connect(am).connect(g); n.start();
     });
@@ -218,24 +228,24 @@ export class Sound {
     mk('polish', (g) => {
       const trem = ctx.createGain(); trem.gain.value = 0.6;
       const lfo = ctx.createOscillator(); lfo.frequency.value = 7; const d = ctx.createGain(); d.gain.value = 0.35; lfo.connect(d).connect(trem.gain); lfo.start();
-      [1567.98, 2093.0, 3135.96].forEach((fr, i) => { const o = ctx.createOscillator(); o.frequency.value = fr; o.detune.value = (i - 1) * 7; const og = ctx.createGain(); og.gain.value = 0.05 / (i + 1); o.connect(og).connect(trem); o.start(); });
-      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2400; f.Q.value = 6; const ng = ctx.createGain(); ng.gain.value = 0.3;
+      [523.25, 783.99, 1046.5].forEach((fr, i) => { const o = ctx.createOscillator(); o.frequency.value = fr; o.detune.value = (i - 1) * 7; const og = ctx.createGain(); og.gain.value = 0.13 / (i + 1); o.connect(og).connect(trem); o.start(); });
+      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1200; f.Q.value = 2; const ng = ctx.createGain(); ng.gain.value = 0.15;
       n.connect(f).connect(ng).connect(trem); n.start();
       trem.connect(g);
     }, 0.35);
     // laser: a thin electric buzz
     mk('laser', (g) => {
-      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 196;
-      const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = 1568;
-      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1500; f.Q.value = 1.4;
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 196;
+      const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 392;
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900; f.Q.value = 0.5;
       const g2 = ctx.createGain(); g2.gain.value = 0.15;
-      const trem = ctx.createGain(); trem.gain.value = 0.7;
-      const lfo = ctx.createOscillator(); lfo.frequency.value = 31; const d = ctx.createGain(); d.gain.value = 0.3; lfo.connect(d).connect(trem.gain); lfo.start();
+      const trem = ctx.createGain(); trem.gain.value = 0.32;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 5; const d = ctx.createGain(); d.gain.value = 0.2; lfo.connect(d).connect(trem.gain); lfo.start();
       o.connect(f); o2.connect(g2).connect(f); f.connect(trem).connect(g); o.start(); o2.start();
     }, 0.1);
     // iron: a steamy hiss
     mk('steam', (g) => {
-      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 3200;
+      const n = this._noise(); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1000; f.Q.value = 0.5;
       const am = ctx.createGain(); am.gain.value = 0.7;
       const lfo = ctx.createOscillator(); lfo.frequency.value = 3; const d = ctx.createGain(); d.gain.value = 0.25; lfo.connect(d).connect(am.gain); lfo.start();
       n.connect(f).connect(am).connect(g); n.start();
@@ -262,8 +272,8 @@ export class Sound {
   whistle(m) {
     if (!this.ctx) return;
     if (m < 0) { this.level('whistle', 0, 0.03); return; }
-    this.whOsc.frequency.setTargetAtTime(380 + 760 * Math.min(1.6, m), this.ctx.currentTime, 0.02);
-    this.level('whistle', 0.12);
+    this.whOsc.frequency.setTargetAtTime(330 + 380 * Math.min(1.6, m), this.ctx.currentTime, 0.02);
+    this.level('whistle', 0.08);
   }
 
   // ---------- music: a gentle marimba loop over C, G, Am, F ----------
@@ -271,7 +281,7 @@ export class Sound {
     if (!this.ctx || this.musicOn) return;
     this.musicOn = true;
     this.mNext = this.ctx.currentTime + 0.15; this.mStep = 0;
-    this.music.gain.setTargetAtTime(0.32, this.ctx.currentTime, 2);
+    this.music.gain.setTargetAtTime(0.75, this.ctx.currentTime, 2);
   }
   // a slow, soft lullaby: rounded bell notes over a warm pad and a quiet bass, through a
   // low-pass so nothing is bright or clinky. 4 bars of 16 steps at 76 bpm.
@@ -347,7 +357,7 @@ export class Sound {
       while (this._acc[k] > 1) {
         this._acc[k] -= 1;
         const t = this.ctx.currentTime;
-        if (k === 'bubble') this._tone(500 + Math.random() * 700, t, 0.05, 0.05, 'sine', 1300 + Math.random() * 900, 0.1);
+        if (k === 'bubble') this._tone(330 + Math.random() * 280, t, 0.06, 0.035, 'sine', 650 + Math.random() * 350, 0.1);
         else this._tone(380 + Math.random() * 220, t, 0.09, 0.07, 'sine', 140, 0.15);
       }
     }
