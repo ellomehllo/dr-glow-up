@@ -6,9 +6,26 @@
 const SFX = ['pop', 'splat', 'boing', 'tink', 'nick', 'shing', 'sparkle', 'lock', 'zap', 'knock', 'oink', 'drip',
   'tick', 'stamp', 'success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud', 'flash'];
 const PITCHED = new Set(['pop', 'boing', 'tink', 'zap', 'knock']); // first argument is a pitch
-const SFX_VOL = { tick: 0.5, drip: 0.6, sparkle: 0.7, shing: 0.7, cheer: 0.6, fanfare: 0.7, flash: 0.7, nick: 0.8, knock: 0.8 };
+// recorded clips are mastered loud; these keep them under the music and the voices
+const SFX_VOL = { pop: 0.45, splat: 0.5, boing: 0.35, tink: 0.3, nick: 0.45, shing: 0.3, sparkle: 0.3, lock: 0.45, zap: 0.35,
+  knock: 0.45, oink: 0.5, drip: 0.4, tick: 0.35, stamp: 0.5, success: 0.45, perfect: 0.4, fail: 0.45, fanfare: 0.4,
+  cheer: 0.35, thud: 0.5, flash: 0.35 };
+// big moments: while one rings, another of these is skipped instead of piling on
+const STINGER = new Set(['success', 'perfect', 'fail', 'fanfare', 'cheer', 'thud', 'flash', 'stamp']);
 const VOICES = ['goth', 'bodybuilder', 'bookworm', 'brainiac', 'foodie', 'punk', 'bully', 'gamer', 'glam', 'grandpa', 'regular'];
 const base = new URL('../sounds/', import.meta.url);
+// loudness of a clip, ENV_RATE steps a second, 0..1 (drives the talking mouth)
+const ENV_RATE = 30;
+function envelope(b) {
+  const d = b.getChannelData(0), step = Math.floor(b.sampleRate / ENV_RATE), out = [];
+  let top = 1e-6;
+  for (let i = 0; i < d.length; i += step) {
+    let sum = 0; const e = Math.min(d.length, i + step);
+    for (let j = i; j < e; j++) sum += d[j] * d[j];
+    const r = Math.sqrt(sum / Math.max(1, e - i)); out.push(r); if (r > top) top = r;
+  }
+  return out.map((r) => Math.min(1, Math.pow(r / top, 0.7)));
+}
 export class Sound {
   constructor() {
     this.ctx = null;
@@ -18,7 +35,8 @@ export class Sound {
     this.grains = { bubble: 0, bloop: 0 };
     this._acc = { bubble: 0, bloop: 0 };
     this.musicOn = false;
-    this.buf = {}; this.last = {}; this.vbuf = {}; this.voiceUntil = 0;
+    this.buf = {}; this.last = {}; this.vbuf = {}; this.venv = {}; this.voiceUntil = 0; this.lineAt = {};
+    this.stingUntil = 0; this.talk = null;
     for (const n of SFX) {
       const synth = this[n].bind(this);
       this[n] = (...a) => { if (this.ctx && !this._sample(n, a[0])) synth(...a); };
@@ -34,35 +52,48 @@ export class Sound {
   _sample(n, pitch) {
     const b = this.buf[n]; if (!b) return false;
     const t = this.ctx.currentTime;
-    if (t - (this.last[n] || -1) < 0.045) return true; // the same clip stacked in one frame just gets louder
+    if (t - (this.last[n] || -1) < 0.12) return true; // the same clip stacked up just gets louder and harsher
+    if (STINGER.has(n)) { if (t < this.stingUntil) return true; this.stingUntil = t + Math.min(0.9, b.duration * 0.8); }
     this.last[n] = t;
     const src = this.ctx.createBufferSource(); src.buffer = b;
-    if (PITCHED.has(n) && typeof pitch === 'number') src.playbackRate.value = Math.max(0.5, Math.min(2, pitch));
-    const g = this.ctx.createGain(); g.gain.value = SFX_VOL[n] || 0.9;
-    src.connect(g); this._out(g, 0.08); src.start(t);
+    // the synth pitches went up to 2x; on recordings that turns squeaky, so only nudge them
+    if (PITCHED.has(n) && typeof pitch === 'number') src.playbackRate.value = Math.max(0.88, Math.min(1.12, Math.pow(pitch, 0.25)));
+    const g = this.ctx.createGain(); g.gain.value = SFX_VOL[n] || 0.4;
+    src.connect(g).connect(this.sfxBus); src.start(t);
     return true;
   }
-  // a character's line: 'ouch' | 'happy' | 'gasp'. One voice at a time, with a breather between.
-  voice(kind, line) {
+  // a character's line: 'ouch' | 'happy' | 'gasp'. One voice at a time, with a breather
+  // between; 'ouch' at most every few seconds. who (the patient state) gets s.talk, the
+  // loudness of the line right now, so the mouth moves with the words.
+  voice(kind, line, who = null) {
     if (!this.ctx || this.muted) return;
     if (!VOICES.includes(kind)) kind = 'regular';
     const key = `${kind}-${line}`, t = this.ctx.currentTime;
-    if (t < this.voiceUntil) return;
+    if (t < this.voiceUntil || t < (this.lineAt[line] || 0)) return;
     const b = this.vbuf[key];
-    if (!b) { if (b === undefined) { this.vbuf[key] = null; this._load(new URL(`voice/${key}.mp3`, base)).then((x) => { this.vbuf[key] = x; }, () => {}); } return; }
-    this.voiceUntil = t + b.duration + 1.4;
+    if (!b) { this._loadVoice(key); return; }
+    this.voiceUntil = t + b.duration + 1.2;
+    this.lineAt[line] = t + (line === 'ouch' ? 6 : line === 'happy' ? 4 : 3);
     const src = this.ctx.createBufferSource(); src.buffer = b;
-    src.playbackRate.value = 0.97 + Math.random() * 0.06;
-    const g = this.ctx.createGain(); g.gain.value = 0.8;
-    src.connect(g); this._out(g, 0.05); src.start(t);
+    src.playbackRate.value = 0.94; // a touch lower: several of the voices sit high
+    const g = this.ctx.createGain(); g.gain.value = 0.75;
+    src.connect(g); this._out(g, 0.04); src.start(t);
+    // effects step back while someone talks
+    this.sfxBus.gain.cancelScheduledValues(t);
+    this.sfxBus.gain.setTargetAtTime(0.45, t, 0.03);
+    this.sfxBus.gain.setTargetAtTime(1, t + b.duration / 0.94, 0.15);
+    if (this.talk && this.talk.who) this.talk.who.talk = 0;
+    this.talk = who ? { who, env: this.venv[key], t0: t, rate: 0.94 } : null;
+  }
+  _loadVoice(key) {
+    if (this.vbuf[key] !== undefined) return;
+    this.vbuf[key] = null;
+    this._load(new URL(`voice/${key}.mp3`, base)).then((x) => { this.vbuf[key] = x; this.venv[key] = envelope(x); }, () => {});
   }
   // load one character's lines ahead of time (when they sit down)
   prepVoice(kind) {
     if (!this.ctx) return;
-    for (const l of ['ouch', 'happy', 'gasp']) {
-      const key = `${VOICES.includes(kind) ? kind : 'regular'}-${l}`;
-      if (this.vbuf[key] === undefined) { this.vbuf[key] = null; this._load(new URL(`voice/${key}.mp3`, base)).then((x) => { this.vbuf[key] = x; }, () => {}); }
-    }
+    for (const l of ['ouch', 'happy', 'gasp']) this._loadVoice(`${VOICES.includes(kind) ? kind : 'regular'}-${l}`);
   }
   get ready() { return !!this.ctx; }
   init() {
@@ -76,6 +107,11 @@ export class Sound {
     comp.threshold.value = -12; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.2;
     this.master.connect(comp).connect(ctx.destination);
     this.dry = ctx.createGain(); this.dry.connect(this.master);
+    // clips go through a gentle low-pass (no ear-piercing top end) and duck under voices
+    this.sfxBus = ctx.createGain();
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; lp.Q.value = 0.5;
+    const shelf = ctx.createBiquadFilter(); shelf.type = 'highshelf'; shelf.frequency.value = 2800; shelf.gain.value = -5;
+    this.sfxBus.connect(shelf).connect(lp).connect(this.master);
     const len = Math.floor(ctx.sampleRate * 1.2), ir = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.6); }
     this.verb = ctx.createConvolver(); this.verb.buffer = ir;
@@ -268,6 +304,11 @@ export class Sound {
 
   update(dt) {
     if (!this.ctx) return;
+    if (this.talk) { // mouth follows the line's loudness
+      const k = this.talk, i = Math.floor((this.ctx.currentTime - k.t0) * k.rate * ENV_RATE);
+      if (!k.env || i >= k.env.length) { if (k.who) k.who.talk = 0; this.talk = null; }
+      else if (i >= 0 && k.who) k.who.talk = k.env[i];
+    }
     if (this.musicOn && this.ctx.state === 'running') this._musicTick();
     for (const k of ['bubble', 'bloop']) {
       const rate = this.grains[k];

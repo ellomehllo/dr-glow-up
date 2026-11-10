@@ -622,9 +622,8 @@ export class Game {
       const c = headToStage(s, 0, -40);
       this.fx.burst(c.x, c.y, 10, 360);
       this.fx.glitter(c.x, c.y + 120, 12, 300);
-      this.audio.boing(1.05);
     });
-    this.audio.whoosh(0.14);
+    this.audio.whoosh(0.07);
     this.sayWish(1.1);
     this.setMode('arrive');
     this.retryMs = performance.now() - t0;
@@ -1299,9 +1298,8 @@ export class Game {
     const s = this.s;
     const good = r.verdict === 'perfect' || r.verdict === 'good';
     this.ui.stamp(r.score, good ? r.verdict : 'fail', r.free && !good ? 'over' : r.verdict, scored);
-    this.audio.stamp();
     if (good) {
-      this.audio.success();
+      if (r.verdict !== 'perfect') this.audio.success();
       s.mood = Math.min(1, s.mood + 0.27);
       this.g.hit = 1;
       this.director.bump(1);
@@ -1363,7 +1361,6 @@ export class Game {
         const c = headToStage(s, 0, -40);
         this.fx.burst(c.x, c.y, 14, 420);
         this.fx.glitter(c.x, c.y + 140, 18, 380);
-        this.audio.boing(1.1);
       };
       this.after(0.3, hop(820));
       if (this.feel === 'thrilled') this.after(0.95, hop(640));
@@ -1413,9 +1410,10 @@ export class Game {
     this.director.setObstruction(this.ui.obstruction('results'));
     this.ui.layoutSplit(this.director.obsGoal);
     this.after(0.22, () => {
-      this.audio.thud(); this.director.shake(0.35);
+      this.director.shake(0.35);
       const big = this.passed && n + 1 === LEVELS.length;
       if ((aura >= 70 && !BAD.has(this.feel)) || big) { this.fx.confetti(window.innerWidth, big || aura >= 95 ? 150 : 80); this.audio.cheer(); }
+      else this.audio.thud();
     });
     this.splitV = 0; this.splitUser = false;
     this.setMode('results');
@@ -1440,9 +1438,9 @@ export class Game {
     this.ui.reset();
     this.director.setObstruction(this.ui.obstruction('play'));
     this.director.go(WAIT_VIEW, 0.75);
-    this.audio.whoosh(0.14);
+    this.audio.whoosh(0.07);
     let from = null;
-    this.after(0.75, () => { from = this.waiting.callNext(n); this.audio.boing(0.9); });
+    this.after(0.75, () => { from = this.waiting.callNext(n); });
     this.after(CALL, () => this.startLevel(n, from ? { from } : { avoid: [this.s.who.kind] }));
   }
   setSplit(v) { this.splitV = v; this.splitUser = true; }

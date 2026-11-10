@@ -532,6 +532,18 @@ function drawMouth(ctx, s, time) {
   const m = s.moodV, y = 120, T = toneOf(s.who.skin), lips = s.lips && !(s.lips.id === 'natural' && s.lips.t >= 1) ? paintNow(s, 'lips') : null, paint = lips ? lips.c : s.who.lip, lip = paint || s.who.skin.lip;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = T.mouth; ctx.lineWidth = 3.6;
   const kind = s.mouth;
+  if (s.talk > 0.06 && kind !== 'grit' && kind !== 'aah') { // speaking: the mouth opens with each syllable
+    const o = s.talk, h = 3 + 19 * o, w = 22 + 7 * o + 4 * Math.max(0, m);
+    const p = new Path2D(); p.ellipse(0, y + 4 + h * 0.35, w, h, 0, 0, TAU);
+    ctx.fillStyle = '#7a2535'; ctx.fill(p);
+    ctx.save(); ctx.clip(p);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-w, y + 4 + h * 0.35 - h, w * 2, Math.min(7, h * 0.45)); // top teeth
+    ell(ctx, 0, y + 4 + h * 1.15, w * 0.6, h * 0.5); ctx.fillStyle = '#ff8fa8'; ctx.fill(); // tongue
+    ctx.restore();
+    soft(ctx, 0, y + 6 + h * 1.3, w * 0.8, 6, lip, paint ? 0.7 : 0.45); // the lower lip
+    ctx.strokeStyle = T.mouth; ctx.lineWidth = 3.4; ctx.stroke(p);
+    return;
+  }
   if (kind === 'grit') { // clenched teeth
     const t = s.teeth, p = new Path2D(); p.roundRect(-33, 107, 66, 24, 10);
     ctx.fillStyle = t >= 1 ? '#ffffff' : mix('#e2b948', '#ffffff', smooth(clamp01(t))); ctx.fill(p);

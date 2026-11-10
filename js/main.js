@@ -31,7 +31,7 @@ onReact.fn = (s, expr, dur) => {
   if (!kind) return;
   if (dur < 0.3) { audio.prepVoice(kind); return; }
   const line = LINE[expr] || (expr === 'happy' && dur >= 0.9 ? 'happy' : null);
-  if (line) audio.voice(kind, line);
+  if (line) audio.voice(kind, line, s);
 };
 const playables = new Playables();
 const cloud = new Cloud();
