@@ -30,7 +30,7 @@
 // anger, tears, a cold shoulder or grumbling for a bad one.
 import { ICONS } from './icons.js';
 import { touch, placeOf } from './world.js';
-import { TOOLS, LEVELS, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES, STYLE_IDS } from './config.js';
+import { TOOLS, LEVELS, WEB_FREE, webCapped, VIEWS, CHAPTER_SIZE, KIT, INTRO, STYLES, STYLE_IDS } from './config.js';
 import { REGISTRY } from './tools/index.js';
 import { scoreRelease, rankFor, auraOf, loadProgress, saveProgress } from './scoring.js';
 import { makeState, resetState, drawPatient, tickPatient, headToStage, stageToHead, headBase, headY, react, onFace, eyeSide, PIMPLE_SPOTS, CRACKS, WRINKLES, SPOT_SPOTS } from './patient.js';
@@ -105,7 +105,7 @@ export class Game {
     // ui, audio, input, fx, dirt, director, backdrop, playables, cloud
     Object.assign(this, o);
     this.progress = loadProgress();
-    this.level = Math.min(this.progress.unlocked, LEVELS.length) - 1;
+    this.level = Math.min(this.progress.unlocked, LEVELS.length, webCapped() ? WEB_FREE : Infinity) - 1;
     this.setup = this.makeSetup(this.level);
     const s = (this.s = makeState(this.setup));
     this.before = makeState(this.setup); // the patient exactly as they came in
@@ -1417,7 +1417,9 @@ export class Game {
       best: P.best[n], newBest, passed: this.passed, last: n + 1 === LEVELS.length, unlock,
     });
     // a new tool unlocked for the first time: a pop-up with a button straight into its level
-    if (unlock.length && P.unlocked > had) this.after(1.6, () => { if (this.mode === 'results') this.ui.showUnlock(unlock[0], n + 2); });
+    // on the website, passing the last free level: the app has the rest
+    if (this.passed && webCapped() && n + 1 >= WEB_FREE) this.after(1.6, () => { if (this.mode === 'results') this.ui.showGate(LEVELS.length); });
+    else if (unlock.length && P.unlocked > had) this.after(1.6, () => { if (this.mode === 'results') this.ui.showUnlock(unlock[0], n + 2); });
     this.director.setObstruction(this.ui.obstruction('results'));
     this.ui.layoutSplit(this.director.obsGoal);
     this.after(0.22, () => {
@@ -1443,6 +1445,7 @@ export class Game {
   nextLevel() {
     if (this.mode !== 'results') return;
     const n = this.passed ? (this.level + 1) % LEVELS.length : this.level;
+    if (webCapped() && n >= WEB_FREE) { this.ui.showGate(LEVELS.length); return; } // the free levels are done
     this.setMode('next');
     this.timers = []; this.windowT = 0;
     this.ui.reset();

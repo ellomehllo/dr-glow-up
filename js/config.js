@@ -231,6 +231,10 @@ function makeLevel(n, prev) {
   };
 }
 export const LEVELS = [];
+// the website plays the first WEB_FREE levels; the rest are in the iPhone and Mac apps.
+// The apps (app:), the desktop builds and YouTube Playables play every level.
+export const WEB_FREE = 10;
+export const webCapped = () => typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && !window.ytgame;
 for (let n = 0; n < 100; n++) LEVELS.push(makeLevel(n, LEVELS[n - 1]));
 export const VIEWS = {
   intro: { x: 0, y: 130, r: 420 },

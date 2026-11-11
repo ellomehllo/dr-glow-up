@@ -77,6 +77,8 @@ export class UI {
           <b class="ul-k" id="ul-k">NEW TOOL!</b>
           <span class="ul-name"></span>
           <button class="ul-play" data-ui type="button">${ICONS.play}<span>PLAY</span></button>
+          <a class="ul-play ul-store" data-ui href="https://apps.apple.com/app/id6832223148" target="_blank" rel="noopener">${ICONS.phone}<span>GET THE APP</span></a>
+          <small class="ul-where">iPhone and Mac</small>
         </div>
       </div>
       <section class="results" data-ui aria-live="polite">
@@ -109,7 +111,7 @@ export class UI {
       kit: q('.kit'), kitN: q('.kit-n'), tray: q('.tray'), scrim: q('.tray-scrim'), sheet: q('.tray-sheet'),
       trayX: q('.tray-x'), slots: q('.slots'), styleSlots: q('.slots.styles'),
       swatches: q('.swatches'), styCost: q('.sty-cost'), styDone: q('.sty-done'),
-      unlock: q('.unlock'), ulScrim: q('.ul-scrim'), ulX: q('.ul-x'), ulIco: q('.ul-ico'), ulName: q('.ul-name'), ulPlay: q('.ul-play'),
+      unlock: q('.unlock'), ulK: q('.ul-k'), ulStore: q('.ul-store'), ulScrim: q('.ul-scrim'), ulX: q('.ul-x'), ulIco: q('.ul-ico'), ulName: q('.ul-name'), ulPlay: q('.ul-play'),
     };
     const e = this.el;
     this.muted = false;
@@ -281,12 +283,25 @@ export class UI {
   // ---------- new tool pop-up ----------
   showUnlock(def, lv) {
     const e = this.el;
+    e.unlock.classList.remove('gate');
+    e.ulK.textContent = 'NEW TOOL!';
     e.ulIco.innerHTML = ICONS[def.icon] || '';
     e.ulName.textContent = def.name.toUpperCase();
     e.ulPlay.setAttribute('aria-label', `Play level ${lv} with the ${def.name.toLowerCase()} tool`);
     this.unlockOpen = true;
     e.unlock.classList.add('on');
     e.ulPlay.focus({ preventScroll: true });
+  }
+  // the website's free levels are done: the rest are in the app
+  showGate(total) {
+    const e = this.el;
+    e.unlock.classList.add('gate');
+    e.ulIco.innerHTML = ICONS.phone;
+    e.ulK.textContent = 'FREE LEVELS DONE!';
+    e.ulName.textContent = `GET ALL ${total} LEVELS IN THE APP`;
+    this.unlockOpen = true;
+    e.unlock.classList.add('on');
+    e.ulStore.focus({ preventScroll: true });
   }
   hideUnlock() {
     const e = this.el;

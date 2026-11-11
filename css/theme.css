@@ -298,6 +298,13 @@
   transition-property: scale, box-shadow; transition-duration: .15s; transition-timing-function: ease-out;
 }
 .ul-play .ico { width: 22px; height: 22px; }
+/* the website's free levels are done: the same card, with the App Store link instead of PLAY */
+.ul-store { text-decoration: none; }
+.ul-store .ico { fill: none; }
+.ul-where { font-size: 12px; font-weight: 600; letter-spacing: .1em; color: var(--muted); margin-top: 4px; }
+.unlock:not(.gate) .ul-store, .unlock:not(.gate) .ul-where, .unlock.gate button.ul-play { display: none; }
+.unlock.gate .ul-ico .ico { width: 56px; height: 56px; color: var(--pink); }
+.unlock.gate .ul-name { text-align: center; text-wrap: balance; }
 .ul-play:active { transform: none; scale: .96; box-shadow: 0 0 0 1px rgba(245, 165, 36, .3), 0 3px 8px rgba(245, 165, 36, .35); }
 
 /* ---------- narrow screens ---------- */
