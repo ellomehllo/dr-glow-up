@@ -1,9 +1,11 @@
 // VII. Glow: no-fail. Press on the face and hold (as many presses as you like): a
 // fluffy puff swirls glow serum over it, a shine band sweeps across, glints pop up,
-// and at the end the skin glows like glass.
+// and at the end the skin glows like glass. It also lifts off whatever other tools left
+// on the face and in the hair (soap foam, gel, powder, toothpaste, paint smears).
 import { Tool, drawTapHint } from './base.js';
 import { TAU, rand } from '../draw.js';
 import { INK, applyHead, onFace } from '../patient.js';
+import { wipeResidue } from './free.js';
 
 export class PolishTool extends Tool {
   constructor(g, def) { super(g, def); this.outroLen = 1.0; this.reset(); }
@@ -30,6 +32,7 @@ export class PolishTool extends Tool {
       const w = g.head(this.pos.x + rand(-40, 40), this.pos.y + rand(-40, 40));
       g.fx.spark(w.x, w.y, { size: rand(9, 16), vy: -40 });
     }
+    wipeResidue(g, this.pos.x, this.pos.y, 80);
     g.audio.toolLoop('polish', 1);
     this.rubbing = true;
   }
@@ -40,6 +43,7 @@ export class PolishTool extends Tool {
     g.audio.toolLoop('polish', 0);
     g.audio.toolDone('polish');
     s.sweep = -999; s.shine = 1; s.glow = 1;
+    wipeResidue(g, 0, 0, Infinity); // anything the swirl didn't reach (up in the hair)
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * TAU, w = g.head(Math.cos(a) * 175, -20 + Math.sin(a) * 215);
       g.fx.spark(w.x, w.y, { delay: i * 0.02, size: rand(14, 22), vx: Math.cos(a) * 80, vy: Math.sin(a) * 80 });

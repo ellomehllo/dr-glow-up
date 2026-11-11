@@ -51,3 +51,20 @@ export function pluck(g, q) {
   g.audio.pop(1.6);
   return true;
 }
+// what other tools leave behind (world.js) that the glow lifts off: smears on the face and
+// soap foam, gel, powder, toothpaste and a cucumber slice in the hair (a tangle or a lump
+// stays). Within r of head point (x, y), r Infinity for all of it; a puff where each was.
+const RESIDUE = new Set(['foam', 'gel', 'powder', 'paste', 'slice', 'shine']);
+export function wipeResidue(g, x, y, r) {
+  const s = g.s;
+  let n = 0;
+  const lift = (list, test) => list.filter((m) => {
+    if (!test(m) || Math.hypot(m.x - x, m.y - y) >= r) return true;
+    const w = g.head(m.x, m.y);
+    g.fx.puff(w.x, w.y, 2, '255,240,248'); g.fx.spark(w.x, w.y, { size: rand(9, 14), vy: -60, life: 0.5 });
+    n++; return false;
+  });
+  if (s.smears.length) s.smears = lift(s.smears, () => true);
+  if (s.hairFx.length) s.hairFx = lift(s.hairFx, (m) => RESIDUE.has(m.kind));
+  return n;
+}

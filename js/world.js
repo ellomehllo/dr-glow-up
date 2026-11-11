@@ -9,7 +9,7 @@
 import { onFace, addBald, react } from './patient.js';
 import { inMouth } from './extras.js';
 import { onBody } from './outfits.js';
-import { onHair, mark as skinMark, pinch, dab } from './tools/free.js';
+import { onHair, mark as skinMark, pinch, dab, wipeResidue } from './tools/free.js';
 import { rand } from './draw.js';
 
 const onNose = (x, y) => Math.abs(x) < 30 && y > 24 && y < 96;
@@ -179,14 +179,20 @@ const TOOLS = {
     if (wet(at)) { W.room('gel', { r: 18 }); W.g.audio.drip(); return; }
     return false;
   },
-  // the powder puff: a cloud and a white print wherever it pats
+  // the glow puff: lifts off what other tools left (foam, gel, powder, paste, paint) from
+  // the hair, the face, the clothes and the room; a sneeze if it goes up the nose
   polish(W, at) {
     W.puff('255,240,248', 3);
-    if (at === 'hair') { W.hair('powder'); return; }
-    if (at === 'mouth' || at === 'nose') { W.say('ACHOO!'); W.face('squeeze', 0.7, 'o'); W.s.tiltV -= 2.5; return; }
-    if (at === 'clothes') { W.stain('powder', { r: 22 }); return; }
-    if (at === 'customer') return W.customer('polish', 'sneeze', 'ACHOO!');
-    if (wet(at)) { W.room('powder', { r: 26 }); return; }
+    if (at === 'hair' || at === 'skin') { if (wipeResidue(W.g.g, W.q.x, W.q.y, 50)) W.g.audio.tink(2); return; }
+    if (at === 'mouth' || at === 'nose') { wipeResidue(W.g.g, W.q.x, W.q.y, 50); W.say('ACHOO!'); W.face('squeeze', 0.7, 'o'); W.s.tiltV -= 2.5; return; }
+    if (at === 'clothes') {
+      const st = W.s.stains, n = st.length;
+      W.s.stains = st.filter((m) => Math.hypot(m.x - W.P.bx, m.y - W.P.by) >= m.r + 24);
+      if (W.s.stains.length < n) { W.sparkle('#ffffff', 3); W.g.audio.tink(2); }
+      return;
+    }
+    if (at === 'customer') return W.customer('polish', 'happy', 'FRESH!');
+    if (wet(at) && W.P.p) { if (W.g.backdrop.wipe(W.P.p, 50)) { W.sparkle('#ffffff', 3); W.g.audio.tink(2); } return; }
     return;
   },
   // the mallet: a lump on the head, a tooth knocked out, an "oof"; the clock knocked and
