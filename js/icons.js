@@ -21,6 +21,7 @@ export const ICONS = {
   bandage: wrap('<g transform="rotate(-40 12 12)"><rect x="2.5" y="8.2" width="19" height="7.6" rx="3.8"/><rect x="9" y="8.2" width="6" height="7.6"/><path d="M11 11h.01M13 13h.01M13 11h.01M11 13h.01"/></g>'),
   check: wrap('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   people: wrap('<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.6-3.3 2.8-5 5.5-5s4.9 1.7 5.5 5"/><circle cx="16.5" cy="9.5" r="2.6"/><path d="M15.5 14.2c2.4-.3 4.4 1.1 5 4.3"/>'),
+  phone: wrap('<rect x="6.5" y="2.5" width="11" height="19" rx="2.6"/><path d="M10.5 18.5h3"/>'),
   play: wrap('<path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5a.8.8 0 0 0-1.2.7z"/>'),
   next: wrap('<path d="M5 12h13"/><path d="M13 6l6 6-6 6"/>'),
   lock: wrap('<rect x="5" y="11" width="14" height="9.5" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),

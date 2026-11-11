@@ -36,6 +36,7 @@ export class UI {
           <button class="tc-mode tc-solo" data-ui type="button" data-mode="solo">${ICONS.play}<span><b>SINGLE PLAYER</b><small class="tc-lv">LEVEL 1</small></span></button>
           <button class="tc-mode tc-multi" data-ui type="button" data-mode="multi">${ICONS.people}<span><b>MULTIPLAYER</b><small>PLAY WITH FRIENDS</small></span></button>
         </div>
+        <a class="tc-store" data-ui href="https://apps.apple.com/app/id6832223148" target="_blank" rel="noopener">${ICONS.phone}<span>Download on the App Store</span></a>
       </div>
       <div class="splash" aria-live="polite"><div class="sp-in"><span class="sp-ch"></span><span class="sp-k">LEVEL</span><b class="sp-n">1</b></div><div class="sp-new"></div></div>
       <div class="dock">
@@ -91,6 +92,9 @@ export class UI {
         </div>
       </section>`;
     const q = (s) => root.querySelector(s);
+    // the App Store link is for the website only: not inside the app, not on YouTube Playables
+    if (location.protocol === 'app:' || window.ytgame) q('.tc-store').remove();
+    else q('.tc-store').addEventListener('pointerdown', (ev) => ev.stopPropagation());
     this.el = {
       hud: q('.hud-top'), bar: q('.bar'), mute: q('.mute'), num: q('.aura-num'), fill: q('.aura-fill'), aura: q('.aura'),
       lvls: q('.lvls'), lvlN: q('.lv-n'), stepsList: q('.steps'), steps: [],

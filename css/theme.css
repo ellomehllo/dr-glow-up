@@ -602,6 +602,19 @@
 .tc-mode:active { scale: .96; }
 .tc-mode:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; }
 @media (hover: hover) { .tc-multi:hover { background: #fff; } }
+.tc-store {
+  display: flex; align-items: center; justify-content: center; gap: 8px; align-self: center; height: 40px; margin-top: 12px; padding: 0 16px 0 14px;
+  border: 1px solid transparent; border-radius: 999px; color: var(--ink); text-decoration: none;
+  background: rgba(255, 255, 255, .7); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: var(--sh-1, 0 2px 8px rgba(0, 0, 0, .08)); -webkit-tap-highlight-color: transparent;
+  font: 600 14px/1 Fredoka, system-ui, sans-serif; letter-spacing: .02em;
+  transition-property: scale, background-color; transition-duration: .15s; transition-timing-function: ease-out;
+}
+.title-card:not(.on) .tc-store { pointer-events: none; }
+.tc-store .ico { width: 20px; height: 20px; flex: none; color: var(--pink); }
+.tc-store:active { scale: .96; }
+.tc-store:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; }
+@media (hover: hover) { .tc-store:hover { background: #fff; } }
 /* naming: the pencil by your name, and two scrolling rows of words */
 .lb-me { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .lb-pen { width: 32px; height: 32px; border-radius: 11px; }
