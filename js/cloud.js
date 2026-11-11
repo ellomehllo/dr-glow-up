@@ -3,8 +3,8 @@
 // Supabase user and keeps that session in this browser. After every level the progress
 // goes up through save_progress(), which merges and never lowers anything; at start the
 // saved progress comes back down and is merged into the local one.
-// It runs only on the real site (doctorglowup.site) or with ?cloud, so local runs, ?debug
-// checks, YouTube Playables and the iOS app never touch it. Every failure is silent: the
+// It runs on the real site (doctorglowup.site), in the iPhone and Mac apps (served from
+// app://local) or with ?cloud, so local runs, ?debug checks and YouTube Playables never touch it. Every failure is silent: the
 // game always plays from its local progress.
 const API = 'https://gawytyorlxeoicczwobj.supabase.co';
 const KEY = 'sb_publishable_va8G3OF6qQtNe4yoEkYyew_wkQHD49z'; // public by design: the rules live in the database
@@ -27,7 +27,7 @@ export class Cloud {
   constructor() {
     const q = new URLSearchParams(location.search);
     this.on = typeof fetch === 'function' && !window.ytgame && !q.has('nocloud')
-      && (q.has('cloud') || (location.hostname === HOME && !q.has('debug')));
+      && (q.has('cloud') || ((location.hostname === HOME || location.protocol === 'app:') && !q.has('debug')));
     this.session = this.on ? readSession() : null;
     this.want = null; // the newest progress waiting to go up
     this.sending = null;

@@ -122,4 +122,5 @@ export class Mp {
 export const CODE_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const cleanCode = (t) => String(t || '').toUpperCase()
   .split('').filter((c) => CODE_ABC.includes(c)).join('').slice(0, 6);
-export const roomLink = (code) => `${location.origin}${location.pathname}?room=${code}`;
+// (from the iPhone and Mac apps, app://local, the link goes to the website)
+export const roomLink = (code) => (/^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}` : 'https://doctorglowup.site/') + `?room=${code}`;
